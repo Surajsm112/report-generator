@@ -232,3 +232,18 @@ function groupedCasesHtml(list, limit, openCases) {
   `;
   const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
 })();
+
+/* ===== Grouping used by the visual test-case reports ===== */
+function moduleKey(c) {
+  const m = c.id ? String(c.id).match(/^(.*?)[-_ ]?\d+$/) : null;
+  return m && m[1] ? m[1] : null;
+}
+// Sections when the sheet has them; otherwise modules taken from the ID prefix; otherwise one group.
+function caseGroups() {
+  if (SECTIONS.length > 1) return SECTIONS.map(s => [s, CASES.filter(c => c.section === s)]);
+  const mods = new Map();
+  CASES.forEach(c => { const k = moduleKey(c); if (k) { if (!mods.has(k)) mods.set(k, []); mods.get(k).push(c); } });
+  if (mods.size >= 2 && mods.size <= 40) return [...mods.entries()];
+  return [['All test cases', CASES]];
+}
+function shortName(s, n) { n = n || 34; return s.length > n ? s.slice(0, n - 1) + '…' : s; }

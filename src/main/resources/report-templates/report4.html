@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ – Trends</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root { --g1:#0891b2; --g2:#22d3ee; --bg:#effafc; }
+</style>
+</head>
+<body>
+<header>
+  <span class="tag">Trends</span>
+  <h1 id="title"></h1>
+  <p id="sub"></p>
+</header>
+<main>
+  <div id="truncWarn" class="vwarn" hidden></div>
+  <div class="vstats" id="stats"></div>
+  <div class="vgrid" id="grid"></div>
+</main>
+<script>
+const DATA = /*__DATA__*/null;
+/*__COMMON__*/
+/*__VIZ__*/
+
+setHeader();
+const d0 = dateCols[0] || null;
+const measures = numCols.slice(0, 3);
+const m0 = measures[0] || null;
+const grid = document.getElementById('grid');
+
+function seriesFor(m) { return trendSeries(ROWS, d0, m ? m.i : null, m && !isSummable(m.name) ? 'avg' : 'sum'); }
+const aggName = m => (m && !isSummable(m.name)) ? 'Average ' : 'Total ';
+
+if (!d0) {
+  document.getElementById('stats').innerHTML = statCard('Records', ROWS.length.toLocaleString(), '', '#0891b2', '#22d3ee');
+  grid.innerHTML = vcard('No date column found', '', emptyNote('Trends need a column with dates. This file has none, so see the other reports for category and distribution views.'), 'vwide');
+} else {
+  const bucket = dateBucketLen(d0) === 7 ? 'month' : 'day';
+  const s0 = seriesFor(m0);
+  const vals = s0.map(p => p[1]);
+  const best = vals.length ? s0[vals.indexOf(Math.max(...vals))] : null;
+  const worst = vals.length ? s0[vals.indexOf(Math.min(...vals))] : null;
+  const change = vals.length > 1 && vals[0] !== 0 ? (vals[vals.length - 1] - vals[0]) / Math.abs(vals[0]) * 100 : null;
+  const label = m0 ? m0.name : 'Records';
+  document.getElementById('stats').innerHTML =
+    statCard('Time span', s0.length + ' ' + bucket + (s0.length === 1 ? '' : 's'), d0.minDate + ' to ' + d0.maxDate, '#0891b2', '#22d3ee') +
+    statCard('Best ' + bucket, best ? fmt(best[1]) : '–', best ? best[0] : '', '#16a34a', '#4ade80') +
+    statCard('Weakest ' + bucket, worst ? fmt(worst[1]) : '–', worst ? worst[0] : '', '#f59e0b', '#fcd34d') +
+    statCard('First to last', change === null ? '–' : (change >= 0 ? '+' : '') + change.toFixed(1) + '%', label + ' per ' + bucket, change !== null && change < 0 ? '#dc2626' : '#2563eb', change !== null && change < 0 ? '#fb7185' : '#60a5fa');
+
+  const cards = [], draws = [];
+  const lineCfg = (labels, data, name, color) => ({ type: 'line',
+    data: { labels, datasets: [{ label: name, data, borderColor: color, backgroundColor: vGradient(color + 'aa', color + '08'), fill: true, tension: .35, pointRadius: data.length > 40 ? 0 : 3, pointBackgroundColor: color, borderWidth: 3 }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => fmt(v) } }, x: { ticks: { maxTicksLimit: 12 } } } } });
+
+  measures.forEach((m, i) => {
+    const s = i === 0 ? s0 : seriesFor(m);
+    cards.push(vcard(aggName(m) + m.name + ' per ' + bucket, 'Each point is one ' + bucket + '.', vbox('t' + i, 270)));
+    draws.push(() => draw('t' + i, lineCfg(s.map(p => p[0]), s.map(p => p[1]), m.name, ['#0891b2', '#7c3aed', '#f59e0b'][i])));
+  });
+  if (!measures.length) {
+    const s = trendSeries(ROWS, d0, null, 'count');
+    cards.push(vcard('Records per ' + bucket, 'How many rows fall in each ' + bucket + '.', vbox('t0', 270)));
+    draws.push(() => draw('t0', lineCfg(s.map(p => p[0]), s.map(p => p[1]), 'Records', '#0891b2')));
+  }
+
+  if (m0 && s0.length > 1) {
+    const running = []; let acc = 0; s0.forEach(p => { acc += p[1]; running.push(acc); });
+    if (isSummable(m0.name)) {
+      cards.push(vcard('Running total of ' + m0.name, 'Adds up as time goes on.', vbox('tc', 270)));
+      draws.push(() => draw('tc', lineCfg(s0.map(p => p[0]), running, 'Running total', '#2563eb')));
+    }
+    const chg = vals.map((v, i) => i === 0 || vals[i - 1] === 0 ? null : (v - vals[i - 1]) / Math.abs(vals[i - 1]) * 100);
+    cards.push(vcard('Change from the previous ' + bucket, 'Green = up, red = down.', vbox('tg', 270)));
+    draws.push(() => draw('tg', { type: 'bar', data: { labels: s0.map(p => p[0]), datasets: [{ data: chg.map(v => v === null ? 0 : +v.toFixed(1)), backgroundColor: chg.map(v => v === null ? '#cbd5e1' : v >= 0 ? '#22c55e' : '#ef4444'), borderRadius: 6 }] },
+      options: { plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => v + '%' } }, x: { ticks: { maxTicksLimit: 12 } } } } }));
+  }
+
+  const cnt = trendSeries(ROWS, d0, null, 'count');
+  cards.push(vcard('Records per ' + bucket, 'How many rows were recorded.', vbox('tn', 270)));
+  draws.push(() => draw('tn', { type: 'bar', data: { labels: cnt.map(p => p[0]), datasets: [{ data: cnt.map(p => p[1]), backgroundColor: vGradient('#0891b2', '#a5f3fc'), borderRadius: 6 }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { ticks: { precision: 0 } }, x: { ticks: { maxTicksLimit: 12 } } } } }));
+
+  // weekday pattern (only when there is enough daily data)
+  const days = new Set(ROWS.map(r => r[d0.i]).filter(Boolean));
+  if (days.size >= 14) {
+    const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], sum = new Array(7).fill(0), n = new Array(7).fill(0);
+    ROWS.forEach(r => { const d = r[d0.i]; if (!d) return; const w = new Date(d + 'T00:00:00Z').getUTCDay(); n[w]++; if (m0 && typeof r[m0.i] === 'number') sum[w] += r[m0.i]; });
+    const avg = names.map((_, i) => m0 ? (n[i] ? sum[i] / n[i] : 0) : n[i]);
+    cards.push(vcard((m0 ? 'Average ' + m0.name : 'Records') + ' by weekday', 'Which days are strongest.', vbox('tw', 270)));
+    draws.push(() => draw('tw', { type: 'bar', data: { labels: names, datasets: [{ data: avg, backgroundColor: avg.map((v, i) => lerpColor('#a5f3fc', '#0e7490', avg.length ? v / Math.max(...avg, 1) : 0)), borderRadius: 8 }] },
+      options: { plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => fmt(v) } } } } }));
+  }
+  grid.innerHTML = cards.join('');
+  draws.forEach(f => f());
+}
+</script>
+</body>
+</html>

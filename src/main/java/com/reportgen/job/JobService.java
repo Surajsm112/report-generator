@@ -37,7 +37,7 @@ public class JobService {
 
     private final Map<String, Job> jobs = new ConcurrentHashMap<>();
     private final ExecutorService workers = Executors.newFixedThreadPool(2);
-    private final ExecutorService reportPool = Executors.newFixedThreadPool(3);
+    private final ExecutorService reportPool = Executors.newFixedThreadPool(4);
 
     private final FileParser parser = new FileParser();
     private final TableAnalyzer analyzer = new TableAnalyzer();
@@ -66,11 +66,13 @@ public class JobService {
 
             job.update(Job.Status.ANALYZING, 30, "Detecting column types (numbers, dates, categories)…");
             AnalyzedTable table = analyzer.analyze(job.getFileName(), raw);
-            job.setDataInfo(table.rows().size(), table.columns().size(), table.truncated(), table.totalRows());
+            boolean sheet = table.layout() != null;
+            job.setDataInfo(sheet ? table.layout().cells().size() : table.rows().size(), table.columns().size(),
+                    table.truncated(), table.totalRows());
             List<ReportService.Definition> plan = ReportService.definitionsFor(table);
-            job.setReportPlan(table.testCase() != null ? "testcases" : "data", plan);
+            job.setReportPlan(sheet ? "sheet" : table.testCase() != null ? "testcases" : "data", plan);
 
-            job.update(Job.Status.GENERATING, 50, "Generating your three reports…");
+            job.update(Job.Status.GENERATING, 50, "Generating your " + plan.size() + " reports…");
             AtomicInteger finished = new AtomicInteger();
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             for (ReportService.Definition def : plan) {
@@ -81,7 +83,7 @@ public class JobService {
                         throw new IllegalStateException("Could not build report " + def.no(), e);
                     }
                     int done = finished.incrementAndGet();
-                    job.setProgress(50 + done * 16, "Built report " + done + " of 3: " + def.name());
+                    job.setProgress(50 + done * 50 / plan.size() - 1, "Built report " + done + " of " + plan.size() + ": " + def.name());
                 }, reportPool));
             }
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ – Section Scorecard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root { --g1:#0b8f6a; --g2:#1ec8a5; --bg:#f1f8f6; --line:#dbe9e5; --brand:#0b8f6a; --muted:#6b7d78; }
+  .heat { border-collapse:separate; border-spacing:3px; width:100%; font-size:13.5px; }
+  .heat th { font-size:12px; color:#5f716c; font-weight:600; padding:6px 8px; text-align:center; }
+  .heat th:first-child, .heat td:first-child { text-align:left; }
+  .heat td { padding:9px 10px; text-align:center; border-radius:8px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .heat td.name { background:none; font-weight:600; text-align:left; max-width:300px; }
+  .heat td.rate { min-width:150px; background:none; padding:4px 6px; }
+  .ratebar { height:22px; border-radius:11px; background:#e8f0ee; position:relative; overflow:hidden; }
+  .ratebar i { position:absolute; left:0; top:0; bottom:0; border-radius:11px; }
+  .ratebar b { position:relative; z-index:1; font-size:12px; color:#0f2d26; line-height:22px; padding-left:10px; }
+  .scroll { overflow:auto; }
+</style>
+</head>
+<body>
+<header>
+  <span class="tag">Section Scorecard</span>
+  <h1 id="title"></h1>
+  <p id="sub"></p>
+  <div id="meta"></div>
+</header>
+<main>
+  <div id="truncWarn" class="vwarn" hidden></div>
+  <div class="vstats" id="stats"></div>
+  <div class="vgrid">
+    <div id="rankCard"></div>
+    <div id="radarCard"></div>
+    <div id="polarCard"></div>
+    <div id="heatCard" class="vwide"></div>
+  </div>
+</main>
+<script>
+const DATA = /*__DATA__*/null;
+/*__COMMON__*/
+/*__TC__*/
+/*__VIZ__*/
+
+setTcHeader();
+const groups = caseGroups().map(([name, list]) => { const c = countStatus(list); return { name, list, c, rate: passRate(c) }; });
+const ALL = countStatus(CASES);
+const rated = groups.filter(g => g.rate !== null);
+const best = rated.length ? rated.reduce((a, b) => b.rate > a.rate ? b : a) : null;
+const worst = rated.length ? rated.reduce((a, b) => b.rate < a.rate ? b : a) : null;
+const kind = SECTIONS.length > 1 ? 'section' : (groups.length > 1 ? 'module' : 'group');
+
+document.getElementById('stats').innerHTML =
+  statCard(groups.length === 1 ? 'Test cases' : kind === 'module' ? 'Modules' : 'Sections', groups.length === 1 ? CASES.length : groups.length, CASES.length + ' test cases', '#0b8f6a', '#1ec8a5') +
+  statCard('Overall pass rate', pct(passRate(ALL)), ALL['PASS'] + ' passed', '#2563eb', '#60a5fa') +
+  statCard('Strongest ' + kind, best ? pct(best.rate) : '–', best ? shortName(best.name, 28) : '', '#16a34a', '#86efac') +
+  statCard('Needs most work', worst ? pct(worst.rate) : '–', worst ? shortName(worst.name, 28) : '', worst && worst.rate < 100 ? '#dc2626' : '#f59e0b', worst && worst.rate < 100 ? '#fb923c' : '#fcd34d');
+
+// ---- 1. ranked bars: weakest first, colour follows the pass rate ----
+const ranked = [...rated].sort((a, b) => a.rate - b.rate).slice(0, 25);
+document.getElementById('rankCard').innerHTML = vcard('Pass rate by ' + kind, 'Weakest first. Bar colour goes from red (low) to green (high).',
+  groups.length < 2 ? emptyNote('This sheet has a single group, so there is nothing to rank.') : vbox('rank', Math.max(200, ranked.length * 30 + 60)));
+if (groups.length >= 2) draw('rank', {
+  type: 'bar',
+  data: { labels: ranked.map(g => shortName(g.name, 40)), datasets: [{ data: ranked.map(g => +g.rate.toFixed(1)), backgroundColor: ranked.map(g => rateColor(g.rate)), borderRadius: 8, barThickness: 18 }] },
+  options: { indexAxis: 'y', plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.parsed.x + '% pass · ' + ranked[c.dataIndex].list.length + ' test cases' } } },
+    scales: { x: { min: 0, max: 100, ticks: { callback: v => v + '%' } }, y: { grid: { display: false } } } }
+});
+
+// ---- 2. radar: shape of the pass rate across groups ----
+const radarOk = rated.length >= 3 && rated.length <= 14;
+document.getElementById('radarCard').innerHTML = vcard('Pass-rate radar', 'The further a point is from the centre, the higher the pass rate.',
+  radarOk ? vbox('radar', 340) : emptyNote('The radar needs between 3 and 14 groups.'));
+if (radarOk) draw('radar', {
+  type: 'radar',
+  data: { labels: rated.map(g => shortName(g.name, 22)), datasets: [{ label: 'Pass rate %', data: rated.map(g => +g.rate.toFixed(1)), borderColor: '#0b8f6a', backgroundColor: 'rgba(30,200,165,.25)', pointBackgroundColor: rated.map(g => rateColor(g.rate)), pointRadius: 5 }] },
+  options: { plugins: { legend: { display: false } }, scales: { r: { min: 0, max: 100, ticks: { stepSize: 25, backdropColor: 'transparent' } } } }
+});
+
+// ---- 3. polar area: how the test cases are spread ----
+document.getElementById('polarCard').innerHTML = vcard('Where the test cases are', 'Number of test cases in each ' + kind + '.',
+  groups.length < 2 ? emptyNote('Only one group.') : vbox('polar', 340));
+if (groups.length >= 2) draw('polar', {
+  type: 'polarArea',
+  data: { labels: groups.map(g => shortName(g.name, 28)), datasets: [{ data: groups.map(g => g.list.length), backgroundColor: groups.map((_, i) => lerpColor('#0b8f6a', '#3b82f6', i / Math.max(1, groups.length - 1)) .replace('rgb', 'rgba').replace(')', ',.78)')) }] },
+  options: { plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: { size: 11 } } } }, scales: { r: { ticks: { backdropColor: 'transparent' } } } }
+});
+
+// ---- 4. heatmap: group x status, colour = how many ----
+const cols = STATUS_ORDER.filter(s => ALL[s] > 0);
+const maxCell = Math.max(1, ...groups.flatMap(g => cols.map(s => g.c[s])));
+function cellStyle(s, n) {
+  if (!n) return 'background:#f3f6f5;color:#b8c4c0';
+  const t = 0.18 + 0.82 * (n / maxCell);
+  const base = STATUS_COLOR[s === 'NOT RUN' ? 'NOT RUN' : s];
+  const dark = s !== 'NOT RUN' && s !== 'SKIPPED';
+  return 'background:' + lerpColor('#ffffff', base, t) + ';color:' + (t > 0.55 && dark ? '#fff' : '#1f2d29');
+}
+document.getElementById('heatCard').innerHTML = vcard('Status heatmap', 'Darker cell = more test cases with that result.',
+  '<div class="scroll"><table class="heat"><thead><tr><th>' + (kind === 'module' ? 'Module' : kind === 'section' ? 'Section' : 'Group') + '</th><th>Total</th>' +
+  cols.map(s => '<th>' + STATUS_LABEL[s] + '</th>').join('') + '<th>Pass rate</th></tr></thead><tbody>' +
+  groups.map(g => '<tr><td class="name">' + esc(g.name) + '</td><td style="background:#eef3f2">' + g.list.length + '</td>' +
+    cols.map(s => '<td style="' + cellStyle(s, g.c[s]) + '">' + g.c[s] + '</td>').join('') +
+    '<td class="rate"><div class="ratebar"><i style="width:' + (g.rate === null ? 0 : g.rate) + '%;background:' + rateColor(g.rate) + '"></i><b>' + pct(g.rate) + '</b></div></td></tr>').join('') +
+  '</tbody></table></div>');
+</script>
+</body>
+</html>

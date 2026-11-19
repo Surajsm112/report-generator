@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ – Key Figures</title>
+<style>
+  :root { --bg:#f4f7fb; --card:#fff; --ink:#1b2a41; --muted:#6b7a90; --line:#e3e9f2; --brand:#2f5bea; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Segoe UI, system-ui, -apple-system, Arial, sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:linear-gradient(120deg,#1f3fae,#2f5bea 60%,#4aa3ff); color:#fff; padding:26px 24px 58px; }
+  header .tag { display:inline-block; background:rgba(255,255,255,.18); border-radius:20px; padding:3px 12px; font-size:12px; margin-bottom:8px; }
+  header h1 { margin:0 0 4px; font-size:26px; } header p { margin:0; opacity:.88; font-size:14px; }
+  header .sheettitle { font-size:17px; margin-top:10px; opacity:.95; }
+  main { max-width:1180px; margin:-38px auto 40px; padding:0 16px; }
+  .warn { background:#fff4e0; border:1px solid #ffd9a0; color:#8a5200; padding:10px 14px; border-radius:10px; margin-bottom:14px; font-size:14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:16px; align-items:start; }
+  .card { background:var(--card); border-radius:14px; box-shadow:0 4px 18px rgba(30,60,120,.08); padding:16px 20px 12px; }
+  .card h3 { margin:0 0 10px; font-size:14px; letter-spacing:.05em; text-transform:uppercase; color:var(--brand); }
+  .item { display:flex; justify-content:space-between; gap:16px; padding:9px 0; border-top:1px solid var(--line); align-items:baseline; }
+  .item:first-of-type { border-top:0; }
+  .item .l { color:var(--ink); font-size:14.5px; line-height:1.4; }
+  .item .v { font-weight:700; font-size:16px; white-space:nowrap; font-variant-numeric:tabular-nums; text-align:right; max-width:55%; overflow-wrap:anywhere; white-space:normal; }
+  .item .v.txt { font-weight:600; font-size:14.5px; }
+  .notes .n { padding:9px 0; border-top:1px solid var(--line); color:#3a475c; font-size:14px; line-height:1.5; }
+  .notes .n:first-of-type { border-top:0; }
+  .empty { text-align:center; color:var(--muted); padding:50px 10px; }
+  @media print { header { background:#2f5bea !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="tag">Key Figures</span>
+  <h1 id="title"></h1>
+  <p id="sub"></p>
+  <div class="sheettitle" id="sheetTitle"></div>
+</header>
+<main>
+  <div id="truncWarn" class="warn" hidden></div>
+  <div class="grid" id="cards"></div>
+</main>
+<script>
+const DATA = /*__DATA__*/null;
+/*__COMMON__*/
+/*__SHEET__*/
+
+setSheetHeader('key figures');
+
+// ---- the sheet's own title: a lone text in the first rows ----
+let usedTitleRow = -1;
+for (let r = 0; r < Math.min(3, NROWS); r++) {
+  const cs = cellsOf(r);
+  if (cs.length === 1 && !isNumLike(cs[0].v) && !isUpperHeading(cs[0].v) && cs[0].v.length <= 90) {
+    document.getElementById('sheetTitle').textContent = cs[0].v; usedTitleRow = r; break;
+  }
+}
+
+// ---- headings: rows made only of CAPITAL-LETTER texts, e.g. INITIAL INVESTMENT | CASHFLOW DETAILS ----
+const heads = [];
+for (let r = 0; r < NROWS; r++) {
+  const cs = cellsOf(r);
+  if (cs.length && cs.every(x => isUpperHeading(x.v))) heads.push({ row: r, items: cs });
+}
+const headRows = new Set(heads.map(h => h.row));
+function groupFor(r, c) {
+  for (let i = heads.length - 1; i >= 0; i--) {
+    if (heads[i].row < r) {
+      const cand = heads[i].items.filter(x => x.c <= c);
+      if (cand.length) return cleanLabel(cand[cand.length - 1].v);
+    }
+  }
+  return 'Details';
+}
+
+// ---- label + value pairs; long texts without a value are notes ----
+const groups = new Map(), notes = [];
+function put(g, label, value, isText) {
+  if (!groups.has(g)) groups.set(g, []);
+  groups.get(g).push({ label, value, isText });
+}
+for (let r = 0; r < NROWS; r++) {
+  if (r === usedTitleRow || headRows.has(r) || numericRun(r)) continue;
+  const cs = cellsOf(r);
+  for (let i = 0; i < cs.length; i++) {
+    const a = cs[i], b = cs[i + 1];
+    if (isNumLike(a.v)) continue;                       // a lone number belongs to a series, not a label
+    if (b && isNumLike(b.v)) { put(groupFor(r, a.c), cleanLabel(a.v), b.v, false); i++; }
+    else if (b && !isNumLike(b.v) && a.v.length <= 50 && b.v.length <= 40 && /[=:]\s*$/.test(a.v)) { put(groupFor(r, a.c), cleanLabel(a.v), b.v, true); i++; }
+    else if (a.v.length >= 25) notes.push(a.v);
+  }
+}
+
+// ---- draw ----
+const host = document.getElementById('cards');
+let html = '';
+groups.forEach((items, name) => {
+  html += '<div class="card"><h3>' + esc(name) + '</h3>' + items.map(it =>
+    '<div class="item"><span class="l">' + esc(it.label) + '</span><span class="v' + (it.isText ? ' txt' : '') + '">' + esc(it.value) + '</span></div>').join('') + '</div>';
+});
+if (notes.length) {
+  html += '<div class="card notes"><h3>Notes in the sheet</h3>' + notes.map(n => '<div class="n">' + esc(n) + '</div>').join('') + '</div>';
+}
+host.innerHTML = html || '<div class="empty">No label and value pairs were found in this sheet. Open the Sheet View report to see its content.</div>';
+</script>
+</body>
+</html>

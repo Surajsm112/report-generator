@@ -1,5 +1,6 @@
 package com.reportgen.parse;
 
+import com.reportgen.model.Layout;
 import com.reportgen.model.RawTable;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -31,6 +32,7 @@ public class FileParser {
     public static final int MAX_ROWS = 50_000;
     private static final int MAX_COLUMNS = 200;
     private static final int MAX_GRID_ROWS = 300_000;
+    private static final int MAX_LAYOUT_ROWS = 600;
 
     public RawTable parse(String fileName, byte[] content) throws IOException {
         String lower = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
@@ -67,7 +69,29 @@ public class FileParser {
                 grid.add(cells);
             }
         }
-        return GridReader.read(grid, null, MAX_ROWS);
+        return tableOrLayout(grid, grid, null);
+    }
+
+    /**
+     * Normal case: a table with column headings. If the sheet is a form or worksheet (no real headings),
+     * keep it exactly as laid out instead of inventing column names.
+     */
+    private RawTable tableOrLayout(List<List<String>> grid, List<List<String>> displayGrid, String sheetName) {
+        RawTable table = null;
+        try {
+            table = GridReader.read(grid, sheetName, MAX_ROWS);
+        } catch (IllegalArgumentException e) {
+            // "empty file" and "header but no data" are real errors; only "no table found" means it may be a form.
+            if (e.getMessage() == null || !e.getMessage().startsWith("Could not find")) {
+                throw e;
+            }
+        }
+        if (table != null && !GridReader.looksLikeForm(table)) {
+            return table;
+        }
+        Layout layout = GridReader.buildLayout(displayGrid, MAX_LAYOUT_ROWS);
+        return new RawTable(layout.columns(), layout.cells().stream().map(r -> r.stream().map(v -> v.isEmpty() ? (String) null : v).toList()).toList(),
+                java.util.Map.of(), sheetName, null, layout.truncated(), layout.cells().size(), layout);
     }
 
     /** Picks the delimiter that appears most often in the first line (outside quotes). */
@@ -141,7 +165,27 @@ public class FileParser {
                 }
                 grid.add(cells);
             }
-            return GridReader.read(grid, best.getSheetName(), MAX_ROWS);
+            // The same sheet as Excel shows it (formatted numbers, evaluated formulas), used for form-style sheets.
+            List<List<String>> display = new ArrayList<>();
+            for (int r = best.getFirstRowNum(); r <= lastRow && display.size() < MAX_GRID_ROWS; r++) {
+                Row row = best.getRow(r);
+                List<String> cells = new ArrayList<>();
+                if (row != null) {
+                    int last = Math.min(row.getLastCellNum(), MAX_COLUMNS);
+                    for (int c = 0; c < last; c++) {
+                        Cell cell = row.getCell(c);
+                        String v;
+                        try {
+                            v = cell == null ? null : formatter.formatCellValue(cell, evaluator);
+                        } catch (RuntimeException e) {
+                            v = cellText(cell, formatter, evaluator);
+                        }
+                        cells.add(v);
+                    }
+                }
+                display.add(cells);
+            }
+            return tableOrLayout(grid, display, best.getSheetName());
         }
     }
 

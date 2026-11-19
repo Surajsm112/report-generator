@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ – Issues &amp; Risk</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root { --g1:#d1344a; --g2:#ff8a3d; --bg:#fdf5f3; --line:#f1ddd8; --brand:#d1344a; --muted:#8a6f6a; }
+  .ok { background:linear-gradient(120deg,#e6f9ee,#d3f3e1); border:1px solid #b7e8cb; color:#14532d; border-radius:16px; padding:22px 26px; margin-bottom:18px; display:flex; gap:16px; align-items:center; }
+  .ok .big { font-size:42px; } .ok b { font-size:19px; display:block; margin-bottom:2px; }
+  .fbar2 { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+  .fbar2 select, .fbar2 input { border:1px solid var(--line); border-radius:8px; padding:7px 10px; font:inherit; font-size:14px; background:#fff; }
+  .fbar2 input { flex:1; min-width:160px; }
+  .lh { margin:18px 0 6px; font-size:15px; display:flex; gap:10px; align-items:center; }
+  .lh .dotc { width:12px; height:12px; border-radius:50%; }
+  .lh small { color:var(--muted); font-weight:400; }
+</style>
+</head>
+<body>
+<header>
+  <span class="tag">Issues &amp; Risk</span>
+  <h1 id="title"></h1>
+  <p id="sub"></p>
+  <div id="meta"></div>
+</header>
+<main>
+  <div id="truncWarn" class="vwarn" hidden></div>
+  <div id="banner"></div>
+  <div class="vstats" id="stats"></div>
+  <div class="vgrid">
+    <div id="secCard"></div>
+    <div id="typeCard"></div>
+    <div class="vcard vwide">
+      <h3 id="listTitle">Open issues</h3>
+      <div class="vsub">Failed first, then blocked, other and not run. Click a test case for its steps and expected result.</div>
+      <div class="fbar2" id="fb"></div>
+      <div id="list"></div>
+      <button class="tmore" id="more" type="button" hidden></button>
+    </div>
+  </div>
+</main>
+<script>
+const DATA = /*__DATA__*/null;
+/*__COMMON__*/
+/*__TC__*/
+/*__VIZ__*/
+
+setTcHeader();
+const ALL = countStatus(CASES);
+const ISSUE = ['FAIL', 'BLOCKED', 'OTHER', 'NOT RUN'];
+const issues = CASES.filter(c => ISSUE.includes(c.status));
+const open = ALL['FAIL'] + ALL['BLOCKED'] + ALL['OTHER'];
+
+// ---- banner ----
+document.getElementById('banner').innerHTML = open === 0
+  ? '<div class="ok"><span class="big">✓</span><div><b>No failed or blocked test cases</b>' + ALL['PASS'] + ' of ' + CASES.length + ' test cases passed' +
+    (ALL['NOT RUN'] ? ' · ' + ALL['NOT RUN'] + ' have no result yet.' : '.') + '</div></div>' : '';
+
+// ---- tiles ----
+const tile = (label, s, c1, c2, always) => (ALL[s] > 0 || always) ? statCard(label, ALL[s], CASES.length ? Math.round(ALL[s] / CASES.length * 100) + '% of all test cases' : '', c1, c2) : '';
+document.getElementById('stats').innerHTML =
+  tile('Failed', 'FAIL', '#dc2626', '#f87171', true) + tile('Blocked', 'BLOCKED', '#d97706', '#fbbf24', true) +
+  tile('Not run', 'NOT RUN', '#64748b', '#94a3b8', false) + tile('Skipped', 'SKIPPED', '#7c8aa0', '#b3bdcc', false) + tile('Other status', 'OTHER', '#7c3aed', '#a78bfa', false) +
+  statCard('Passed', ALL['PASS'], pct(passRate(ALL)) + ' pass rate', '#16a34a', '#4ade80');
+
+// ---- charts ----
+const groups = caseGroups().map(([name, list]) => [name, countStatus(list.filter(c => ISSUE.includes(c.status)))]).filter(g => ISSUE.some(s => g[1][s] > 0));
+document.getElementById('secCard').innerHTML = vcard('Open issues by ' + (SECTIONS.length > 1 ? 'section' : 'group'), 'Only groups that have at least one issue.',
+  groups.length ? '<div class="vbox" id="secBox"><canvas id="secChart"></canvas></div>' : emptyNote('No open issues. Nothing to chart.'));
+if (groups.length) stackedBar('secChart', 'secBox', groups);
+
+const used = ISSUE.filter(s => ALL[s] > 0);
+document.getElementById('typeCard').innerHTML = vcard('Issue types', 'How the open issues split.',
+  used.length ? vbox('types', 300) : emptyNote('Every test case has a passing result.'));
+if (used.length) draw('types', {
+  type: 'doughnut',
+  data: { labels: used.map(s => STATUS_LABEL[s]), datasets: [{ data: used.map(s => ALL[s]), backgroundColor: used.map(s => STATUS_COLOR[s]), borderColor: '#fff', borderWidth: 3 }] },
+  options: { cutout: '60%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } } } }
+});
+
+// ---- the list ----
+let fStatus = '', fSection = '', fQ = '', limit = 100;
+const fb = document.getElementById('fb');
+fb.innerHTML = '<select id="fs"><option value="">All issue types</option>' + used.map(s => '<option value="' + s + '">' + STATUS_LABEL[s] + ' (' + ALL[s] + ')</option>').join('') + '</select>' +
+  (SECTIONS.length > 1 ? '<select id="fsec"><option value="">All sections</option>' + SECTIONS.map(s => '<option value="' + esc(s) + '">' + esc(shortName(s, 60)) + '</option>').join('') + '</select>' : '') +
+  '<input id="fq" type="search" placeholder="Search issues…">';
+fb.querySelector('#fs').onchange = e => { fStatus = e.target.value; limit = 100; render(); };
+const secSel = fb.querySelector('#fsec'); if (secSel) secSel.onchange = e => { fSection = e.target.value; limit = 100; render(); };
+fb.querySelector('#fq').oninput = e => { fQ = e.target.value.toLowerCase(); limit = 100; render(); };
+document.getElementById('more').onclick = () => { limit += 100; render(); };
+if (!issues.length) document.querySelector('.fbar2').hidden = true;
+
+function render() {
+  const list = issues.filter(c => (!fStatus || c.status === fStatus) && (!fSection || c.section === fSection) &&
+    (!fQ || c.r.some(v => v !== null && String(v).toLowerCase().includes(fQ))));
+  document.getElementById('listTitle').textContent = 'Open issues (' + list.length + ')';
+  if (!list.length) { document.getElementById('list').innerHTML = '<div class="tnone">' + (issues.length ? 'No issues match your filters.' : 'No issues to show. Every test case has a passing result.') + '</div>'; document.getElementById('more').hidden = true; return; }
+  let html = '', shown = 0;
+  for (const s of ISSUE) {
+    const part = list.filter(c => c.status === s);
+    if (!part.length) continue;
+    const take = part.slice(0, Math.max(0, limit - shown));
+    shown += take.length;
+    if (!take.length) continue;
+    html += '<div class="lh"><span class="dotc" style="background:' + STATUS_COLOR[s] + '"></span><b>' + STATUS_LABEL[s] + '</b><small>' + part.length + ' test case' + (part.length === 1 ? '' : 's') + '</small></div>' +
+      take.map(c => caseRowHtml(c, s === 'FAIL') + (c.section && SECTIONS.length > 1 ? '' : '')).join('');
+  }
+  document.getElementById('list').innerHTML = html;
+  const more = document.getElementById('more'); more.hidden = list.length <= limit;
+  more.textContent = 'Show more (' + (list.length - limit) + ' remaining)';
+}
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ – Number Series</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root { --bg:#f7f5ff; --card:#fff; --ink:#221f3a; --muted:#6f6c8a; --line:#e6e2f5; --brand:#6d4aff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Segoe UI, system-ui, -apple-system, Arial, sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:linear-gradient(120deg,#4b2fd6,#6d4aff 55%,#a78bfa); color:#fff; padding:26px 24px 56px; }
+  header .tag { display:inline-block; background:rgba(255,255,255,.2); border-radius:20px; padding:3px 12px; font-size:12px; margin-bottom:8px; }
+  header h1 { margin:0 0 4px; font-size:26px; } header p { margin:0; opacity:.88; font-size:14px; }
+  main { max-width:1180px; margin:-36px auto 40px; padding:0 16px; }
+  .warn { background:#fff4e0; border:1px solid #ffd9a0; color:#8a5200; padding:10px 14px; border-radius:10px; margin-bottom:14px; font-size:14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(460px,1fr)); gap:16px; align-items:start; }
+  .card { background:var(--card); border-radius:14px; box-shadow:0 4px 18px rgba(80,60,160,.08); padding:16px 20px; }
+  .card h3 { margin:0 0 2px; font-size:16px; } .card .sub { color:var(--muted); font-size:12.5px; margin-bottom:10px; }
+  .box { position:relative; height:230px; }
+  details { margin-top:10px; } summary { cursor:pointer; color:var(--brand); font-size:13.5px; font-weight:600; }
+  table { border-collapse:collapse; width:100%; font-size:13px; margin-top:8px; }
+  th, td { padding:5px 8px; border-bottom:1px solid var(--line); text-align:right; font-variant-numeric:tabular-nums; }
+  th:first-child, td:first-child { text-align:left; color:var(--muted); }
+  .empty { background:var(--card); border-radius:14px; padding:50px 20px; text-align:center; color:var(--muted); box-shadow:0 4px 18px rgba(80,60,160,.08); }
+  @media (max-width:520px) { .grid { grid-template-columns:1fr; } }
+  @media print { header { background:#6d4aff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="tag">Number Series</span>
+  <h1 id="title"></h1>
+  <p id="sub"></p>
+</header>
+<main>
+  <div id="truncWarn" class="warn" hidden></div>
+  <div class="grid" id="cards"></div>
+</main>
+<script>
+const DATA = /*__DATA__*/null;
+/*__COMMON__*/
+/*__SHEET__*/
+
+setSheetHeader('number series');
+
+// A series = a row with a label and 3 or more figures side by side (for example one value per year).
+// Its x-axis labels come from the closest row above that holds only numbers in the same columns (1, 2, 3 ... or years).
+const series = [];
+for (let r = 0; r < NROWS; r++) {
+  const run = numericRun(r);
+  if (!run) continue;
+  const cs = cellsOf(r);
+  const labelCell = cs.find(x => !isNumLike(x.v) && x.c < run.start) || cs.find(x => !isNumLike(x.v));
+  if (!labelCell) continue;                        // a row of numbers without a label is an axis row
+  let labels = null;
+  for (let rr = r - 1; rr >= 0 && !labels; rr--) {
+    const rc = numericRun(rr);
+    if (!rc) continue;
+    const other = cellsOf(rr);
+    if (other.some(x => !isNumLike(x.v))) continue; // has text, so it is a series itself
+    if (rc.start <= run.start && rc.end >= run.end) labels = GRID[rr].slice(run.start, run.end + 1);
+  }
+  const raw = GRID[r].slice(run.start, run.end + 1);
+  series.push({
+    row: LAY.rowNumbers[r], label: cleanLabel(labelCell.v), raw,
+    values: raw.map(toNum), labels: labels || raw.map((_, i) => String(i + 1)),
+    percent: raw.every(v => /%\s*\)?$/.test(String(v).trim()))
+  });
+}
+
+const host = document.getElementById('cards');
+if (!series.length) {
+  host.innerHTML = '<div class="empty" style="grid-column:1/-1">No rows of figures were found in this sheet. See Key Figures and Sheet View for its content.</div>';
+} else {
+  const shown = series.slice(0, 24);
+  host.innerHTML = shown.map((s, i) =>
+    '<div class="card"><h3>' + esc(s.label) + '</h3><div class="sub">Excel row ' + s.row + ' · ' + s.values.length + ' values</div>' +
+    '<div class="box"><canvas id="s' + i + '"></canvas></div>' +
+    '<details><summary>Show the values</summary><table><thead><tr><th></th>' + s.labels.map(l => '<th>' + esc(l) + '</th>').join('') + '</tr></thead><tbody><tr><td>' + esc(s.label) + '</td>' +
+    s.raw.map(v => '<td>' + esc(v) + '</td>').join('') + '</tr></tbody></table></details></div>').join('') +
+    (series.length > shown.length ? '<div class="empty" style="grid-column:1/-1">Showing the first ' + shown.length + ' of ' + series.length + ' series. The Sheet View report has them all.</div>' : '');
+  shown.forEach((s, i) => {
+    draw('s' + i, {
+      type: 'line',
+      data: { labels: s.labels, datasets: [{ label: s.label, data: s.values, borderColor: PALETTE[i % PALETTE.length], backgroundColor: PALETTE[i % PALETTE.length] + '33', fill: true, tension: .25, pointRadius: 3 }] },
+      options: { plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => s.percent ? v + '%' : fmt(v) } } } }
+    });
+  });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ – Distributions</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root { --g1:#4f46e5; --g2:#a855f7; --bg:#f6f4ff; }
+  .rng { position:relative; height:12px; background:#ece9fb; border-radius:8px; min-width:160px; }
+  .rng .box { position:absolute; top:0; bottom:0; background:linear-gradient(90deg,#818cf8,#c084fc); border-radius:8px; opacity:.9; }
+  .rng .med { position:absolute; top:-3px; bottom:-3px; width:3px; background:#1e1b4b; border-radius:2px; }
+  table.corr { border-collapse:separate; border-spacing:3px; font-size:12.5px; }
+  table.corr th { color:#6b7280; font-weight:600; padding:4px 8px; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  table.corr td { text-align:center; padding:10px 12px; border-radius:8px; min-width:62px; font-variant-numeric:tabular-nums; }
+  .scroll { overflow:auto; }
+</style>
+</head>
+<body>
+<header>
+  <span class="tag">Distributions</span>
+  <h1 id="title"></h1>
+  <p id="sub"></p>
+</header>
+<main>
+  <div id="truncWarn" class="vwarn" hidden></div>
+  <div class="vstats" id="stats"></div>
+  <div class="vgrid" id="grid"></div>
+</main>
+<script>
+const DATA = /*__DATA__*/null;
+/*__COMMON__*/
+/*__VIZ__*/
+
+setHeader();
+const nums = numCols.slice(0, 8);
+const grid = document.getElementById('grid');
+function corr(a, b) {
+  let n = 0, sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0;
+  for (const r of ROWS) { const x = r[a], y = r[b]; if (typeof x !== 'number' || typeof y !== 'number') continue; n++; sa += x; sb += y; saa += x * x; sbb += y * y; sab += x * y; }
+  if (n < 5) return null;
+  const d = Math.sqrt((n * saa - sa * sa) * (n * sbb - sb * sb));
+  return d === 0 ? null : (n * sab - sa * sb) / d;
+}
+
+if (!nums.length) {
+  document.getElementById('stats').innerHTML = statCard('Records', ROWS.length.toLocaleString(), '', '#4f46e5', '#a855f7');
+  grid.innerHTML = vcard('No numeric columns found', '', emptyNote('Distributions describe how numbers are spread. This file has no numeric columns, so see the Categories report instead.'), 'vwide');
+} else {
+  // strongest relationship between two numeric columns
+  let bestPair = null;
+  for (let i = 0; i < nums.length; i++) for (let j = i + 1; j < nums.length; j++) {
+    const r = corr(nums[i].i, nums[j].i);
+    if (r !== null && (!bestPair || Math.abs(r) > Math.abs(bestPair.r))) bestPair = { a: nums[i], b: nums[j], r };
+  }
+  const stats = nums.map(c => {
+    const v = numbersOf(ROWS, c.i).sort((a, b) => a - b);
+    const q1 = quantile(v, .25), q3 = quantile(v, .75), iqr = q3 - q1;
+    return { c, v, min: v[0], max: v[v.length - 1], q1, med: quantile(v, .5), q3, mean: c.mean, out: iqr === 0 ? 0 : v.filter(x => x < q1 - 1.5 * iqr || x > q3 + 1.5 * iqr).length };
+  });
+  const withOut = stats.filter(s => s.out > 0).length;
+  document.getElementById('stats').innerHTML =
+    statCard('Records', ROWS.length.toLocaleString(), '', '#4f46e5', '#818cf8') +
+    statCard('Numeric columns', numCols.length, nums.map(c => c.name).slice(0, 3).join(', ') + (numCols.length > 3 ? '…' : ''), '#7c3aed', '#c084fc') +
+    statCard('Strongest link', bestPair ? bestPair.r.toFixed(2) : '–', bestPair ? bestPair.a.name + ' & ' + bestPair.b.name : 'needs 2 numeric columns', '#db2777', '#f472b6') +
+    statCard('Columns with outliers', withOut, withOut ? 'values far from the middle' : 'none found', withOut ? '#d97706' : '#16a34a', withOut ? '#fbbf24' : '#4ade80');
+
+  const cards = [], draws = [];
+  // histograms
+  stats.slice(0, 4).forEach((s, i) => {
+    cards.push(vcard('Spread of ' + s.c.name, 'Median ' + fmt(s.med) + ' · from ' + fmt(s.min) + ' to ' + fmt(s.max), vbox('h' + i, 240)));
+    draws.push(() => { const h = histogram(s.v, 10);
+      draw('h' + i, { type: 'bar', data: { labels: h.labels, datasets: [{ data: h.counts, backgroundColor: vGradient(['#4f46e5', '#7c3aed', '#c026d3', '#0891b2'][i], ['#a5b4fc', '#c4b5fd', '#f0abfc', '#a5f3fc'][i]), borderRadius: 6 }] },
+        options: { plugins: { legend: { display: false } }, scales: { y: { ticks: { precision: 0 } }, x: { ticks: { maxRotation: 40, font: { size: 10 } } } } } }); });
+  });
+
+  // scatter of the strongest pair
+  if (bestPair) {
+    cards.push(vcard(bestPair.a.name + ' vs ' + bestPair.b.name, 'Each dot is one row · correlation ' + bestPair.r.toFixed(2) + (Math.abs(bestPair.r) > .7 ? ' (strong)' : Math.abs(bestPair.r) > .4 ? ' (moderate)' : ' (weak)'), vbox('sc', 280)));
+    draws.push(() => {
+      const step = Math.max(1, Math.ceil(ROWS.length / 700)), pts = [];
+      ROWS.forEach((r, k) => { if (k % step === 0 && typeof r[bestPair.a.i] === 'number' && typeof r[bestPair.b.i] === 'number') pts.push({ x: r[bestPair.a.i], y: r[bestPair.b.i] }); });
+      draw('sc', { type: 'scatter', data: { datasets: [{ data: pts, backgroundColor: 'rgba(124,58,237,.45)', pointRadius: 4 }] },
+        options: { plugins: { legend: { display: false } }, scales: { x: { title: { display: true, text: bestPair.a.name }, ticks: { callback: v => fmt(v) } }, y: { title: { display: true, text: bestPair.b.name }, ticks: { callback: v => fmt(v) } } } } });
+    });
+  }
+
+  // summary table with a range bar: coloured box = middle 50 %, dark line = median
+  cards.push(vcard('Summary of every numeric column', 'The bar runs from the lowest to the highest value. The coloured part is the middle half of the values and the dark line is the median.',
+    '<div class="scroll"><table class="vt"><thead><tr><th>Column</th><th class="n">Lowest</th><th class="n">Median</th><th class="n">Average</th><th class="n">Highest</th><th>Range</th><th class="n">Outliers</th></tr></thead><tbody>' +
+    stats.map(s => { const span = (s.max - s.min) || 1, pos = x => Math.max(0, Math.min(100, (x - s.min) / span * 100));
+      return '<tr><td><b>' + esc(s.c.name) + '</b></td><td class="n">' + fmt(s.min) + '</td><td class="n">' + fmt(s.med) + '</td><td class="n">' + fmt(s.mean) + '</td><td class="n">' + fmt(s.max) + '</td>' +
+        '<td><div class="rng"><div class="box" style="left:' + pos(s.q1) + '%;width:' + Math.max(2, pos(s.q3) - pos(s.q1)) + '%"></div><div class="med" style="left:' + pos(s.med) + '%"></div></div></td><td class="n">' + s.out + '</td></tr>'; }).join('') +
+    '</tbody></table></div>', 'vwide'));
+
+  // correlation heat grid
+  if (nums.length >= 2) {
+    let h = '<div class="scroll"><table class="corr"><tr><th></th>' + nums.map(c => '<th title="' + esc(c.name) + '">' + esc(c.name) + '</th>').join('') + '</tr>';
+    nums.forEach(a => {
+      h += '<tr><th style="text-align:right">' + esc(a.name) + '</th>';
+      nums.forEach(b => {
+        const r = a === b ? 1 : corr(a.i, b.i);
+        const bg = r === null ? '#eef0f6' : r >= 0 ? lerpColor('#ffffff', '#4f46e5', r) : lerpColor('#ffffff', '#e11d48', -r);
+        h += '<td style="background:' + bg + ';color:' + (r !== null && Math.abs(r) > .55 ? '#fff' : '#1f2937') + '">' + (r === null ? '–' : r.toFixed(2)) + '</td>';
+      });
+      h += '</tr>';
+    });
+    cards.push(vcard('How the numbers move together', 'Blue: rise together · Red: one rises while the other falls · White: no link.', h + '</table></div>', 'vwide'));
+  }
+  grid.innerHTML = cards.join('');
+  draws.forEach(f => f());
+}
+</script>
+</body>
+</html>

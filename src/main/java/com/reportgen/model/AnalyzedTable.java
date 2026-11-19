@@ -6,6 +6,7 @@ import java.util.Map;
 /**
  * Typed data: numbers are Double, dates are ISO strings, everything else is String, empty is null.
  * testCase is non-null when the file looks like a list of test cases with pass/fail results.
+ * layout is non-null when the sheet is a form / worksheet that is shown as laid out.
  */
 public record AnalyzedTable(
         String title,
@@ -16,5 +17,6 @@ public record AnalyzedTable(
         List<List<Object>> rows,
         boolean truncated,
         int totalRows,
-        TestCaseInfo testCase) {
+        TestCaseInfo testCase,
+        Layout layout) {
 }

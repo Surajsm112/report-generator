@@ -110,6 +110,63 @@ class PipelineTest {
         assertEquals(ColumnType.CATEGORY, t.columns().get(5).type());
     }
 
+    /** A form / calculator sheet: labels and values placed around the sheet, no column headings. */
+    private byte[] formWorkbook() throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            Sheet s = wb.createSheet("Calc");
+            row(s, 0, "Loan Calculator");
+            row(s, 1, "INPUTS", null, null, "OUTPUTS");
+            Row r2 = s.createRow(2);
+            r2.createCell(0).setCellValue("Amount=");
+            r2.createCell(1).setCellValue(50000);
+            r2.createCell(3).setCellValue("Interest=");
+            r2.createCell(4).setCellValue(0.1);
+            Row r3 = s.createRow(3);
+            r3.createCell(0).setCellValue("Years=");
+            r3.createCell(1).setCellValue(5);
+            r3.createCell(3).setCellValue("Payment=");
+            r3.createCell(4).setCellValue(1061);
+            row(s, 5, "Note: change the blue cells only, everything else is calculated.");
+            wb.write(out);
+        }
+        return out.toByteArray();
+    }
+
+    @Test
+    void formStyleSheetIsShownAsLaidOutAndNeverGetsMadeUpColumnNames() throws Exception {
+        AnalyzedTable t = analyzer.analyze("calc.xlsx", parser.parse("calc.xlsx", formWorkbook()));
+        assertNotNull(t.layout(), "a form is kept as laid out");
+        assertNull(t.testCase());
+        assertEquals(List.of("A", "B", "D", "E"), t.layout().columns());
+        assertEquals(List.of(1, 2, 3, 4, 6), t.layout().rowNumbers());
+        assertEquals("Amount=", t.layout().cells().get(2).get(0));
+        assertEquals("50000", t.layout().cells().get(2).get(1));
+        assertTrue(t.columns().stream().noneMatch(c -> c.name().startsWith("Column")));
+        ReportService service = new ReportService(new ObjectMapper());
+        for (ReportService.Definition def : ReportService.definitionsFor(t)) {
+            String html = service.generate(t, def);
+            assertTrue(html.contains("\"layout\":{"), "layout embedded in " + def.template());
+            assertFalse(html.contains("/*__SHEET__*/"), "sheet script inserted in " + def.template());
+        }
+    }
+
+    @Test
+    void oneUnnamedColumnGetsTheExcelLetterNotANumber() throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            Sheet s = wb.createSheet("S");
+            row(s, 0, "Name", "City", "Type");
+            row(s, 1, "Anna", "Pune", "Gold", "VIP");
+            row(s, 2, "Bob", "Delhi", "Basic", "Regular");
+            row(s, 3, "Cara", "Goa", "Gold", "VIP");
+            wb.write(out);
+        }
+        AnalyzedTable t = analyzer.analyze("p.xlsx", parser.parse("p.xlsx", out.toByteArray()));
+        assertNull(t.layout());
+        assertEquals(List.of("Name", "City", "Type", "Column D"), t.columns().stream().map(c -> c.name()).toList());
+    }
+
     @Test
     void minimalSheetWithOnlyNameAndResultIsATestCaseSheet() throws Exception {
         String csv = "Test Case,Status\nLogin success,PASS\nLogin fail,FAIL\nLogout,PASS\n";
@@ -207,6 +264,8 @@ class PipelineTest {
                 assertFalse(html.contains("/*__DATA__*/"), "placeholder replaced in " + def.template());
                 assertFalse(html.contains("/*__COMMON__*/"), "common script inserted in " + def.template());
                 assertFalse(html.contains("/*__TC__*/"), "tc script inserted in " + def.template());
+                assertFalse(html.contains("/*__VIZ__*/"), "viz script inserted in " + def.template());
+                assertFalse(html.contains("/*__SHEET__*/"), "sheet script inserted in " + def.template());
             }
         }
         String html = service.generate(generic, ReportService.definitionsFor(generic).get(0));

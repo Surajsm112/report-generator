@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ – Leaderboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root { --g1:#059669; --g2:#d4a017; --bg:#f3faf6; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:900px) { .two { grid-template-columns:1fr; } }
+  .rk { color:#8a948f; width:28px; font-weight:700; }
+  .heatt { border-collapse:separate; border-spacing:3px; font-size:13px; width:100%; }
+  .heatt th { color:#5f6f68; font-weight:600; padding:6px 8px; text-align:center; font-size:12px; }
+  .heatt td { padding:9px 8px; text-align:center; border-radius:8px; font-variant-numeric:tabular-nums; font-weight:600; }
+  .heatt td.name { background:none; text-align:left; max-width:220px; }
+  .scroll { overflow:auto; }
+</style>
+</head>
+<body>
+<header>
+  <span class="tag">Leaderboard</span>
+  <h1 id="title"></h1>
+  <p id="sub"></p>
+</header>
+<main>
+  <div id="truncWarn" class="vwarn" hidden></div>
+  <div class="vstats" id="stats"></div>
+  <div class="vgrid" id="grid"></div>
+</main>
+<script>
+const DATA = /*__DATA__*/null;
+/*__COMMON__*/
+/*__VIZ__*/
+
+setHeader();
+const m = numCols[0] || null;
+const grid = document.getElementById('grid');
+const labelCols = COLS.filter(c => c.type !== 'NUMBER' && (!m || c.i !== m.i)).slice(0, 3);
+const cat0 = catCols[0] || null;
+function shortName(s, n) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+
+if (!m) {
+  // no numbers: rank the most common values instead
+  const cols = [...catCols, ...textCols.filter(c => c.distinct >= 2 && c.distinct < ROWS.length * 0.9)].slice(0, 2);
+  document.getElementById('stats').innerHTML = statCard('Records', ROWS.length.toLocaleString(), '', '#059669', '#34d399');
+  grid.innerHTML = cols.length ? cols.map((c, i) => vcard('Most common ' + c.name, 'Number of records per value', vbox('f' + i, 300))).join('') : vcard('Nothing to rank', '', emptyNote('This file has no numeric column and no repeating labels to rank.'), 'vwide');
+  cols.forEach((c, i) => { const p = topN(aggregate(ROWS, c.i, null, 'count'), 10).filter(x => x[0] !== 'Other');
+    draw('f' + i, { type: 'bar', data: { labels: p.map(x => shortName(String(x[0]), 28)), datasets: [{ data: p.map(x => x[1]), backgroundColor: hGradient('#d4a017', '#059669'), borderRadius: 8 }] },
+      options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { y: { grid: { display: false } }, x: { ticks: { precision: 0 } } } } }); });
+} else {
+  const rows = ROWS.filter(r => typeof r[m.i] === 'number');
+  const vals = rows.map(r => r[m.i]);
+  const total = vals.reduce((a, b) => a + b, 0), avg = vals.length ? total / vals.length : 0;
+  const hi = Math.max(...vals), lo = Math.min(...vals);
+  document.getElementById('stats').innerHTML =
+    statCard('Records', rows.length.toLocaleString(), 'with a value in ' + m.name, '#059669', '#34d399') +
+    (isSummable(m.name) ? statCard('Total ' + m.name, fmt(total), 'all rows added up', '#d4a017', '#fcd34d') : '') +
+    statCard('Average ' + m.name, fmt(avg), 'per row', '#0284c7', '#38bdf8') +
+    statCard('Highest', fmt(hi), '', '#16a34a', '#4ade80') +
+    statCard('Lowest', fmt(lo), '', '#e11d48', '#fb7185');
+
+  const rankTable = (list, good) => {
+    const mx = Math.max(...list.map(r => Math.abs(r[m.i])), 1);
+    return '<table class="vt"><thead><tr><th class="rk">#</th>' + labelCols.map(c => '<th>' + esc(c.name) + '</th>').join('') + '<th class="n">' + esc(m.name) + '</th><th></th></tr></thead><tbody>' +
+      list.map((r, k) => '<tr><td class="rk">' + (k + 1) + '</td>' + labelCols.map(c => '<td>' + esc(r[c.i] === null ? '–' : String(r[c.i])) + '</td>').join('') +
+        '<td class="n"><b>' + fmt(r[m.i]) + '</b></td><td style="min-width:110px"><div class="pbar"><i style="width:' + Math.abs(r[m.i]) / mx * 100 + '%;background:linear-gradient(90deg,' + (good ? '#059669,#34d399' : '#e11d48,#fb7185') + ')"></i></div></td></tr>').join('') + '</tbody></table>';
+  };
+  const sorted = [...rows].sort((a, b) => b[m.i] - a[m.i]);
+  const cards = ['<div class="vwide two">' + vcard('Top 10 rows by ' + m.name, 'Highest values first.', rankTable(sorted.slice(0, 10), true)) +
+    vcard('Bottom 10 rows by ' + m.name, 'Lowest values first.', rankTable([...sorted].reverse().slice(0, 10), false)) + '</div>'];
+
+  // heat map: first category x months (or second category)
+  const d0 = dateCols[0] || null, cat1 = catCols[1] || null;
+  if (cat0 && (d0 || cat1)) {
+    const rowKeys = topN(aggregate(rows, cat0.i, m.i, 'sum'), 8).filter(p => p[0] !== 'Other').map(p => p[0]);
+    let colKeys, colOf;
+    if (d0) { const len = dateBucketLen(d0); colKeys = [...new Set(rows.map(r => r[d0.i]).filter(Boolean).map(d => d.slice(0, len)))].sort().slice(-12); colOf = r => r[d0.i] ? r[d0.i].slice(0, len) : null; }
+    else { colKeys = topN(aggregate(rows, cat1.i, m.i, 'sum'), 8).filter(p => p[0] !== 'Other').map(p => p[0]); colOf = r => r[cat1.i]; }
+    const cell = new Map();
+    rows.forEach(r => { const a = r[cat0.i], b = colOf(r); if (a === null || b === null) return; const k = a + '\u0001' + b; cell.set(k, (cell.get(k) || 0) + r[m.i]); });
+    const mx = Math.max(1, ...[...cell.values()].map(Math.abs));
+    cards.push(vcard('Heat map: ' + m.name + ' by ' + cat0.name + ' and ' + (d0 ? (dateBucketLen(d0) === 7 ? 'month' : 'day') : cat1.name),
+      'Darker green = bigger total. Empty cells mean no rows.',
+      '<div class="scroll"><table class="heatt"><thead><tr><th style="text-align:left">' + esc(cat0.name) + '</th>' + colKeys.map(k => '<th>' + esc(shortName(String(k), 14)) + '</th>').join('') + '</tr></thead><tbody>' +
+      rowKeys.map(a => '<tr><td class="name"><b>' + esc(String(a)) + '</b></td>' + colKeys.map(b => { const v = cell.get(a + '\u0001' + b);
+        if (v === undefined) return '<td style="background:#f2f6f4;color:#c0cac5">·</td>';
+        const t = Math.abs(v) / mx; return '<td style="background:' + lerpColor('#ecfdf5', '#047857', t) + ';color:' + (t > .5 ? '#fff' : '#12372b') + '">' + fmt(v, 0) + '</td>'; }).join('') + '</tr>').join('') + '</tbody></table></div>', 'vwide'));
+  }
+  grid.innerHTML = cards.join('');
+}
+</script>
+</body>
+</html>

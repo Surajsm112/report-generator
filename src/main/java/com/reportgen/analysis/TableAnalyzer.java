@@ -27,6 +27,14 @@ public class TableAnalyzer {
             Pattern.compile("(?i)(^|[^a-z])(id|phone|mobile|zip|pincode|pin|code|number|no)([^a-z]|$)");
 
     public AnalyzedTable analyze(String fileName, RawTable raw) {
+        if (raw.layout() != null) {
+            // A form / worksheet: nothing to type. The reports show the sheet as laid out.
+            String layoutTitle = fileName == null ? "Report" : fileName.replaceFirst("\\.[^.]+$", "");
+            List<ColumnInfo> letters = raw.layout().columns().stream()
+                    .map(l -> new ColumnInfo(l, ColumnType.TEXT, 0, 0, null, null, null, null, null, null, null)).toList();
+            return new AnalyzedTable(layoutTitle, fileName, raw.sheetName(), raw.meta(), letters, List.of(),
+                    raw.truncated(), raw.totalRows(), null, raw.layout());
+        }
         int columnCount = raw.headers().size();
         int rowCount = raw.rows().size();
 
@@ -50,7 +58,7 @@ public class TableAnalyzer {
         String title = fileName == null ? "Report" : fileName.replaceFirst("\\.[^.]+$", "");
         TestCaseInfo testCase = TestCaseDetector.detect(columns, typedRows, raw.sectionColumn());
         return new AnalyzedTable(title, fileName, raw.sheetName(), raw.meta(), columns, typedRows,
-                raw.truncated(), raw.totalRows(), testCase);
+                raw.truncated(), raw.totalRows(), testCase, null);
     }
 
     private ColumnInfo analyzeColumn(String name, List<String> values, List<List<Object>> typedRows, int c,

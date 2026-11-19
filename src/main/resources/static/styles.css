@@ -119,3 +119,10 @@ section[id], main[id] { scroll-margin-top:80px; }
 .thumb .pills { display:flex; gap:6px; margin-top:auto; } .thumb .pills i { height:14px; width:34px; border-radius:10px; background:#16a34a; } .thumb .pills i.r { background:#dc2626; }
 .tt3 { background:#f7f5ff; } .tt3 .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; flex:1; } .tt3 .grid b { border-radius:8px; background:linear-gradient(90deg,#16a34a 80%,#dc2626 80%); height:34px; align-self:start; }
 .tt3 .line { background:#d9d3f7; }
+
+/* gradient cards for reports 4-7 and the results header */
+.tg { position:relative; justify-content:flex-end; }
+.tg .ticon { position:absolute; top:12px; left:16px; font-size:38px; filter:drop-shadow(0 2px 4px rgba(0,0,0,.25)); }
+.tg .row i { background:rgba(255,255,255,.85); }
+.result-actions { display:flex; gap:10px; flex-wrap:wrap; }
+.cards3.many { grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); }

@@ -24,6 +24,7 @@
     upload(new File([blob], 'sales-sample.csv', { type: 'text/csv' }));
   });
   $('#again').addEventListener('click', reset);
+  $('#zip').addEventListener('click', () => { if (jobId) window.location = 'api/jobs/' + jobId + '/download-all'; });
 
   async function upload(file) {
     errorBox.hidden = true;
@@ -87,18 +88,33 @@
     3: '<div class="thumb tt3"><div class="grid"><b></b><b></b><b></b><b></b></div><div class="line" style="width:60%"></div></div>'
   };
 
+  // Reports 4-7 get a gradient card with their icon; reports 1-3 keep their small mock-ups.
+  const gradients = {
+    data: { 4: ['#0891b2', '#22d3ee'], 5: ['#ea580c', '#ec4899'], 6: ['#4f46e5', '#a855f7'], 7: ['#059669', '#d4a017'] },
+    testcases: { 4: ['#0b8f6a', '#1ec8a5'], 5: ['#d1344a', '#ff8a3d'], 6: ['#2f4bd8', '#64748b'], 7: ['#3b2fc9', '#c026d3'] }
+  };
+  function thumbFor(r, isTc) {
+    const base = isTc ? tcThumbs[r.no] : thumbs[r.no];
+    if (base) return base;
+    const g = (gradients[isTc ? 'testcases' : 'data'][r.no]) || ['#4f46e5', '#7c3aed'];
+    return '<div class="thumb tg" style="background:linear-gradient(120deg,' + g[0] + ',' + g[1] + ')"><span class="ticon">' + (r.icon || '📊') + '</span>' +
+      '<div class="row"><i style="height:35%"></i><i style="height:65%"></i><i style="height:50%"></i><i style="height:85%"></i><i style="height:60%"></i><i style="height:75%"></i></div></div>';
+  }
+
   function showResults(s) {
     reports = s.reports;
     const isTc = s.kind === 'testcases';
+    const isSheet = s.kind === 'sheet';
     const kn = $('#kindNote');
-    kn.hidden = !isTc;
+    kn.hidden = !(isTc || isSheet);
     if (isTc) kn.textContent = 'We recognised this as a test-case sheet, so these reports are built around pass / fail results, sections and test steps.';
+    if (isSheet) kn.textContent = 'This file is a worksheet or form (labels and values placed around the sheet), not a table with column headings. So we show it as it is laid out instead of inventing column names.';
     $('#summary').textContent = s.fileName + ' · ' + s.rows.toLocaleString() + ' rows · ' + s.columns + ' columns';
     const note = $('#truncNote');
     note.hidden = !s.truncated;
     if (s.truncated) note.textContent = 'Your file has ' + s.totalRows.toLocaleString() + ' rows. The reports include the first ' + s.rows.toLocaleString() + '.';
     $('#reportCards').innerHTML = reports.map(r =>
-      '<div class="rcard">' + (isTc ? tcThumbs : thumbs)[r.no] + '<div class="rbody"><h3>' + r.no + '. ' + escapeHtml(r.name) + '</h3><p>' + escapeHtml(r.description) +
+      '<div class="rcard">' + thumbFor(r, isTc) + '<div class="rbody"><h3>' + r.no + '. ' + escapeHtml(r.name) + '</h3><p>' + escapeHtml(r.description) +
       '</p><div class="rbtns"><button class="ghost" data-preview="' + r.no + '">Preview</button><button data-download="' + r.no + '">Download</button></div></div></div>').join('');
     show('result');
   }

@@ -1,5 +1,6 @@
 package com.reportgen.parse;
 
+import com.reportgen.model.Layout;
 import com.reportgen.model.RawTable;
 
 import java.util.ArrayList;
@@ -240,7 +241,85 @@ public final class GridReader {
         if (truncated) {
             finalRows = new ArrayList<>(finalRows.subList(0, maxRows));
         }
-        return new RawTable(headers, finalRows, meta, sheetName, sectionColumn, truncated, total);
+        return new RawTable(headers, finalRows, meta, sheetName, sectionColumn, truncated, total, null);
+    }
+
+    // ---------- worksheets that are not tables ----------
+
+    /**
+     * True when many columns have no real heading, which means the sheet is a form or a model
+     * (labels and values placed around the sheet) and not a table with column headings.
+     */
+    public static boolean looksLikeForm(RawTable t) {
+        long unnamed = t.headers().stream().filter(h -> h.startsWith("Column ")).count();
+        return unnamed >= 2 && unnamed >= t.headers().size() * 0.25;
+    }
+
+    /** Keeps the sheet exactly as laid out: only rows and columns that hold something, with Excel letters. */
+    public static Layout buildLayout(List<List<String>> grid, int maxRows) {
+        int maxCol = 0;
+        for (List<String> r : grid) {
+            for (int c = 0; c < r.size(); c++) {
+                if (!norm(r.get(c)).isEmpty()) {
+                    maxCol = Math.max(maxCol, c + 1);
+                }
+            }
+        }
+        if (maxCol == 0) {
+            throw new IllegalArgumentException("The file is empty.");
+        }
+        boolean[] used = new boolean[maxCol];
+        for (List<String> r : grid) {
+            for (int c = 0; c < Math.min(r.size(), maxCol); c++) {
+                if (!norm(r.get(c)).isEmpty()) {
+                    used[c] = true;
+                }
+            }
+        }
+        List<Integer> keep = new ArrayList<>();
+        List<String> letters = new ArrayList<>();
+        for (int c = 0; c < maxCol; c++) {
+            if (used[c]) {
+                keep.add(c);
+                letters.add(columnLetters(c));
+            }
+        }
+        List<Integer> numbers = new ArrayList<>();
+        List<List<String>> cells = new ArrayList<>();
+        boolean truncated = false;
+        for (int i = 0; i < grid.size(); i++) {
+            List<String> r = grid.get(i);
+            List<String> row = new ArrayList<>(keep.size());
+            boolean any = false;
+            for (int c : keep) {
+                String v = c < r.size() ? norm(r.get(c)) : "";
+                if (!v.isEmpty()) {
+                    any = true;
+                }
+                row.add(v);
+            }
+            if (!any) {
+                continue;
+            }
+            if (cells.size() >= maxRows) {
+                truncated = true;
+                break;
+            }
+            numbers.add(i + 1);
+            cells.add(row);
+        }
+        return new Layout(letters, numbers, cells, truncated);
+    }
+
+    /** 0 -> A, 25 -> Z, 26 -> AA ... the same letters Excel shows above its columns. */
+    public static String columnLetters(int index) {
+        StringBuilder sb = new StringBuilder();
+        int n = index;
+        while (n >= 0) {
+            sb.insert(0, (char) ('A' + n % 26));
+            n = n / 26 - 1;
+        }
+        return sb.toString();
     }
 
     // ---------- helpers ----------
@@ -281,7 +360,7 @@ public final class GridReader {
             } else if (previous != null && previous[c] != null && !used.contains(key(previous[c]))) {
                 names[c] = previous[c];
             } else {
-                names[c] = "Column " + (c + 1);
+                names[c] = "Column " + columnLetters(c); // same letter Excel shows, never a made-up number
             }
             used.add(key(names[c]));
         }

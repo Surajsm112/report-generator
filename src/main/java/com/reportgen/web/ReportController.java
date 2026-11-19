@@ -74,6 +74,7 @@ public class ReportController {
                 r.put("no", d.no());
                 r.put("name", d.name());
                 r.put("description", d.description());
+                r.put("icon", d.icon());
                 reports.add(r);
             }
             body.put("reports", reports);
@@ -103,6 +104,34 @@ public class ReportController {
                         ContentDisposition.attachment().filename(fileName, StandardCharsets.UTF_8).build().toString())
                 .contentType(new MediaType("text", "html", StandardCharsets.UTF_8))
                 .body(html.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** All reports of one upload in a single ZIP file. */
+    @GetMapping(value = "/{id}/download-all")
+    public ResponseEntity<byte[]> downloadAll(@PathVariable String id) throws IOException {
+        Job job = find(id);
+        if (job.getStatus() != Job.Status.DONE) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Reports not ready");
+        }
+        String base = job.getFileName().replaceFirst("\\.[^.]+$", "").replaceAll("[^A-Za-z0-9._-]", "_");
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(bytes, StandardCharsets.UTF_8)) {
+            for (ReportService.Definition d : job.getDefinitions()) {
+                String html = job.getReports().get(d.no());
+                if (html == null) {
+                    continue;
+                }
+                String name = d.no() + "-" + d.name().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-") + ".html";
+                zip.putNextEntry(new java.util.zip.ZipEntry(name));
+                zip.write(html.getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+        }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(base + "-reports.zip", StandardCharsets.UTF_8).build().toString())
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .body(bytes.toByteArray());
     }
 
     private String html(String id, int no) {

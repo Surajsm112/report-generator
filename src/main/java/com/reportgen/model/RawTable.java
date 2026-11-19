@@ -11,6 +11,7 @@ import java.util.Map;
  * @param meta          information found above or between tables, e.g. Ticket, Screen Name, Date
  * @param sheetName     the Excel sheet that was used (null for CSV / text)
  * @param sectionColumn name of the added "Section" column, or null when the file has one table only
+ * @param layout        non-null when the sheet is a form / worksheet and is shown as laid out instead of as a table
  */
 public record RawTable(
         List<String> headers,
@@ -19,5 +20,6 @@ public record RawTable(
         String sheetName,
         String sectionColumn,
         boolean truncated,
-        int totalRows) {
+        int totalRows,
+        Layout layout) {
 }

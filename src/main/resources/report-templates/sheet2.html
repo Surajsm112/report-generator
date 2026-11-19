@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ – Sheet View</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1f2933; --muted:#6b7683; --line:#dfe3e8; --brand:#0f766e; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Segoe UI, system-ui, -apple-system, Arial, sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:#0f2f2c; color:#fff; padding:22px 24px 18px; }
+  header .tag { display:inline-block; background:var(--brand); border-radius:20px; padding:3px 12px; font-size:12px; margin-bottom:8px; letter-spacing:.04em; }
+  header h1 { margin:0 0 4px; font-size:24px; } header p { margin:0; opacity:.8; font-size:14px; }
+  main { max-width:1600px; margin:0 auto; padding:14px 16px 40px; }
+  .warn { background:#fff4e0; border:1px solid #ffd9a0; color:#8a5200; padding:10px 14px; border-radius:10px; margin-bottom:14px; font-size:14px; }
+  .bar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+  .bar input { flex:1; min-width:220px; max-width:420px; padding:8px 12px; border:1px solid var(--line); border-radius:8px; font:inherit; }
+  .bar span { color:var(--muted); font-size:14px; }
+  .wrap { background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:auto; max-height:calc(100vh - 210px); }
+  table { border-collapse:separate; border-spacing:0; font-size:13.5px; min-width:100%; }
+  th { position:sticky; top:0; background:#eef2f1; color:#4b5a59; font-weight:600; padding:7px 12px; border-bottom:1px solid var(--line); border-right:1px solid #e3e8e8; z-index:2; text-align:center; }
+  th.rn, td.rn { position:sticky; left:0; background:#eef2f1; color:#6c7b7a; text-align:center; min-width:46px; z-index:3; border-right:1px solid var(--line); font-size:12px; }
+  th.rn { z-index:4; }
+  td { padding:6px 12px; border-bottom:1px solid #eef0f2; border-right:1px solid #f1f3f4; vertical-align:top; white-space:nowrap; min-width:70px; line-height:1.45; }
+  td.long { white-space:pre-wrap; min-width:260px; max-width:420px; word-break:break-word; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  td.heading { font-weight:700; color:var(--brand); }
+  tr:hover td:not(.rn) { background:#f1f8f7; }
+  mark { background:#fde68a; padding:0 1px; border-radius:2px; }
+  @media print { .wrap { max-height:none; overflow:visible; } .bar input { display:none; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="tag">SHEET VIEW</span>
+  <h1 id="title"></h1>
+  <p id="sub"></p>
+</header>
+<main>
+  <div id="truncWarn" class="warn" hidden></div>
+  <div class="bar"><input id="q" type="search" placeholder="Search in the sheet…" aria-label="Search in the sheet"><span id="count"></span></div>
+  <div class="wrap"><table><thead id="head"></thead><tbody id="body"></tbody></table></div>
+</main>
+<script>
+const DATA = /*__DATA__*/null;
+/*__COMMON__*/
+/*__SHEET__*/
+
+setSheetHeader('sheet view');
+
+document.getElementById('head').innerHTML = '<tr><th class="rn"></th>' + LAY.columns.map(l => '<th>' + esc(l) + '</th>').join('') + '</tr>';
+
+function mark(text, q) {
+  const s = esc(text);
+  if (!q) return s;
+  const i = text.toLowerCase().indexOf(q);
+  if (i < 0) return s;
+  return esc(text.slice(0, i)) + '<mark>' + esc(text.slice(i, i + q.length)) + '</mark>' + esc(text.slice(i + q.length));
+}
+
+function render() {
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  let shown = 0;
+  const rows = [];
+  for (let r = 0; r < NROWS; r++) {
+    if (q && !GRID[r].some(v => v.toLowerCase().includes(q))) continue;
+    shown++;
+    const cs = GRID[r].map(v => {
+      const cls = v === '' ? '' : isNumLike(v) ? 'num' : (isUpperHeading(v) ? 'heading' : '') + (v.length > 60 || v.includes('\n') ? ' long' : '');
+      return '<td class="' + cls + '">' + (v === '' ? '' : mark(v, q)) + '</td>';
+    }).join('');
+    rows.push('<tr><td class="rn">' + LAY.rowNumbers[r] + '</td>' + cs + '</tr>');
+  }
+  document.getElementById('body').innerHTML = rows.join('');
+  document.getElementById('count').textContent = q ? shown + ' of ' + NROWS + ' rows match' : NROWS + ' rows · ' + NCOLS + ' columns';
+}
+document.getElementById('q').addEventListener('input', render);
+render();
+</script>
+</body>
+</html>

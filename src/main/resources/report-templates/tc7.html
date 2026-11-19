@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ – Visual Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root { --g1:#3b2fc9; --g2:#c026d3; --bg:#f5f3ff; }
+  .gauge { position:relative; height:200px; } .gauge .c { position:absolute; left:0; right:0; bottom:8px; text-align:center; }
+  .gauge .c b { font-size:38px; display:block; line-height:1; } .gauge .c span { color:#7a8599; font-size:12.5px; }
+  .donutw { position:relative; } .donutw .c { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none; }
+  .donutw .c b { font-size:30px; } .donutw .c span { color:#7a8599; font-size:12px; }
+  main .vgrid { grid-template-columns:repeat(12,minmax(0,1fr)); }
+  .s4 { grid-column:span 4; } .s6 { grid-column:span 6; } .s8 { grid-column:span 8; } .s12 { grid-column:span 12; }
+  @media (max-width:980px) { .s4,.s6,.s8 { grid-column:span 12; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="tag">Visual Dashboard</span>
+  <h1 id="title"></h1>
+  <p id="sub"></p>
+  <div id="meta"></div>
+</header>
+<main>
+  <div id="truncWarn" class="vwarn" hidden></div>
+  <div class="vstats" id="stats"></div>
+  <div class="vgrid" id="grid"></div>
+</main>
+<script>
+const DATA = /*__DATA__*/null;
+/*__COMMON__*/
+/*__TC__*/
+/*__VIZ__*/
+
+setTcHeader();
+const ALL = countStatus(CASES);
+const groups = caseGroups();
+const mods = new Map();
+CASES.forEach(c => { const k = moduleKey(c); if (k) { if (!mods.has(k)) mods.set(k, []); mods.get(k).push(c); } });
+const rate = passRate(ALL);
+
+document.getElementById('stats').innerHTML =
+  statCard('Test cases', CASES.length.toLocaleString(), (groups.length > 1 ? groups.length + (SECTIONS.length > 1 ? ' sections' : ' modules') : 'one group'), '#3b2fc9', '#6d5cf0') +
+  statCard('Passed', ALL['PASS'], pct(rate) + ' pass rate', '#16a34a', '#4ade80') +
+  statCard('Failed', ALL['FAIL'], ALL['FAIL'] ? 'needs a re-test' : 'none', '#dc2626', '#fb7185') +
+  statCard('Blocked', ALL['BLOCKED'], ALL['BLOCKED'] ? 'cannot be run' : 'none', '#d97706', '#fbbf24') +
+  statCard('Not run', ALL['NOT RUN'] + ALL['SKIPPED'], 'no result yet', '#475569', '#94a3b8') +
+  statCard(mods.size > 1 ? 'Modules' : 'Sections', mods.size > 1 ? mods.size : Math.max(1, SECTIONS.length), 'from the sheet', '#c026d3', '#f472b6');
+
+const cards = [];
+cards.push('<div class="s4">' + vcard('1 · Results', 'All test cases by status', '<div class="donutw">' + vbox('g1', 250) + '<div class="c"><b>' + CASES.length + '</b><span>test cases</span></div></div>') + '</div>');
+cards.push('<div class="s4">' + vcard('2 · Pass rate', 'Passed ÷ executed', '<div class="gauge"><canvas id="g2"></canvas><div class="c"><b>' + pct(rate) + '</b><span>of executed tests passed</span></div></div>') + '</div>');
+cards.push('<div class="s4">' + vcard('3 · Test cases per ' + (SECTIONS.length > 1 ? 'section' : 'group'), 'Share of all test cases', groups.length > 1 ? vbox('g3', 250) : emptyNote('Only one group in this sheet.')) + '</div>');
+cards.push('<div class="s8">' + vcard('4 · Results by ' + (SECTIONS.length > 1 ? 'section' : 'group'), 'Stacked by status', groups.length > 1 ? '<div class="vbox" id="g4box"><canvas id="g4"></canvas></div>' : emptyNote('Only one group in this sheet.')) + '</div>');
+cards.push('<div class="s4">' + vcard('5 · Biggest modules', 'Test cases per ID prefix', mods.size > 1 ? vbox('g5', 300) : emptyNote('IDs have no common prefix to group by.')) + '</div>');
+cards.push('<div class="s6">' + vcard('6 · How detailed are the test cases?', TC.steps >= 0 ? 'Number of steps per test case' : 'Length of the expected result', vbox('g6', 250)) + '</div>');
+cards.push('<div class="s6">' + vcard('7 · Progress through the sheet', 'Running total, in the order the test cases appear', vbox('g7', 250)) + '</div>');
+document.getElementById('grid').innerHTML = cards.join('');
+
+const used = STATUS_ORDER.filter(s => ALL[s] > 0);
+draw('g1', { type: 'doughnut', data: { labels: used.map(s => STATUS_LABEL[s]), datasets: [{ data: used.map(s => ALL[s]), backgroundColor: used.map(s => STATUS_COLOR[s]), borderColor: '#fff', borderWidth: 3 }] },
+  options: { cutout: '66%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } } } } });
+
+const r = rate === null ? 0 : rate;
+draw('g2', { type: 'doughnut', data: { labels: ['Passed', 'Remaining'], datasets: [{ data: [r, 100 - r], backgroundColor: [rateColor(rate), '#e8edf5'], borderWidth: 0 }] },
+  options: { rotation: -90, circumference: 180, cutout: '74%', plugins: { legend: { display: false }, tooltip: { enabled: false } } } });
+
+if (groups.length > 1) {
+  const pal = (i, n) => lerpColor('#3b2fc9', '#f472b6', i / Math.max(1, n - 1));
+  draw('g3', { type: 'doughnut', data: { labels: groups.map(g => shortName(g[0], 30)), datasets: [{ data: groups.map(g => g[1].length), backgroundColor: groups.map((_, i) => pal(i, groups.length)), borderColor: '#fff', borderWidth: 2 }] },
+    options: { cutout: '55%', plugins: { legend: { display: groups.length <= 8, position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } } } });
+  stackedBar('g4', 'g4box', groups.map(g => [g[0], countStatus(g[1])]));
+}
+
+if (mods.size > 1) {
+  const top = [...mods.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 10);
+  draw('g5', { type: 'bar', data: { labels: top.map(m => m[0]), datasets: [{ data: top.map(m => m[1].length), backgroundColor: vGradient('#c026d3', '#6d5cf0'), borderRadius: 8 }] },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { y: { grid: { display: false } }, x: { ticks: { precision: 0 } } } } });
+}
+
+// 6. detail: steps per test case (numbered lines / items), or the length of the expected result
+function detailSize(c) {
+  if (TC.steps >= 0) {
+    const t = c.r[TC.steps];
+    if (!hasText(t)) return 0;
+    const lines = String(t).split(/\r?\n|;\s+|\s(?=\d+[.)]\s)/).map(s => s.trim()).filter(Boolean);
+    return Math.max(1, lines.length);
+  }
+  const e = TC.expected >= 0 ? c.r[TC.expected] : null;
+  return hasText(e) ? String(e).length : 0;
+}
+const sizes = CASES.map(detailSize);
+let labels, counts;
+if (TC.steps >= 0) {
+  const mx = Math.min(8, Math.max(...sizes));
+  labels = Array.from({ length: mx + 1 }, (_, i) => i === 0 ? 'None' : i === mx && Math.max(...sizes) > mx ? mx + '+' : String(i));
+  counts = new Array(mx + 1).fill(0);
+  sizes.forEach(s => { counts[Math.min(s, mx)]++; });
+} else {
+  const edges = [0, 1, 40, 80, 160, 320, 100000];
+  labels = ['None', '≤40', '≤80', '≤160', '≤320', 'longer'];
+  counts = new Array(6).fill(0);
+  sizes.forEach(s => { for (let i = edges.length - 2; i >= 0; i--) if (s >= edges[i]) { counts[i]++; break; } });
+}
+draw('g6', { type: 'bar', data: { labels, datasets: [{ data: counts, backgroundColor: vGradient('#16a34a', '#a3e635'), borderRadius: 8 }] },
+  options: { plugins: { legend: { display: false } }, scales: { y: { ticks: { precision: 0 } }, x: { title: { display: true, text: TC.steps >= 0 ? 'Steps in the test case' : 'Characters in the expected result' } } } } });
+
+// 7. cumulative counts along the sheet
+const idxStep = Math.max(1, Math.ceil(CASES.length / 60));
+const cum = { p: 0, f: 0, o: 0 }, xs = [], pp = [], ff = [], oo = [];
+CASES.forEach((c, i) => {
+  if (c.status === 'PASS') cum.p++; else if (c.status === 'FAIL') cum.f++; else cum.o++;
+  if ((i + 1) % idxStep === 0 || i === CASES.length - 1) { xs.push(i + 1); pp.push(cum.p); ff.push(cum.f); oo.push(cum.o); }
+});
+draw('g7', { type: 'line', data: { labels: xs, datasets: [
+  { label: 'Passed', data: pp, borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,.18)', fill: true, tension: .3, pointRadius: 0 },
+  { label: 'Failed', data: ff, borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,.15)', fill: true, tension: .3, pointRadius: 0 },
+  { label: 'Other', data: oo, borderColor: '#94a3b8', backgroundColor: 'rgba(148,163,184,.15)', fill: true, tension: .3, pointRadius: 0 }] },
+  options: { interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } } },
+    scales: { x: { title: { display: true, text: 'Test case number' }, ticks: { maxTicksLimit: 10 } }, y: { ticks: { precision: 0 } } } } });
+</script>
+</body>
+</html>
