@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ – Execution Summary</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root { --bg:#f3f6fb; --card:#fff; --ink:#1b2a41; --muted:#6b7a90; --line:#e3e9f2; --brand:#2f5bea; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Segoe UI, system-ui, -apple-system, Arial, sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:linear-gradient(120deg,#1f3fae,#2f5bea 60%,#4aa3ff); color:#fff; padding:26px 24px 60px; }
+  header .tag { display:inline-block; background:rgba(255,255,255,.18); border-radius:20px; padding:3px 12px; font-size:12px; margin-bottom:8px; }
+  header h1 { margin:0 0 4px; font-size:26px; } header p { margin:0; opacity:.85; font-size:14px; }
+  main { max-width:1180px; margin:-40px auto 40px; padding:0 16px; }
+  .card { background:var(--card); border-radius:14px; box-shadow:0 4px 18px rgba(30,60,120,.08); padding:16px 20px; margin-bottom:16px; }
+  .card h3 { margin:0 0 12px; font-size:16px; }
+  .bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .verdict { border-radius:14px; padding:16px 20px; margin-bottom:16px; font-size:17px; font-weight:600; display:flex; gap:12px; align-items:center; }
+  .verdict small { font-weight:400; opacity:.85; display:block; font-size:14px; margin-top:2px; }
+  .v-ok { background:#dcfce7; color:#14532d; } .v-bad { background:#fee2e2; color:#7f1d1d; }
+  .v-warn { background:#fef3c7; color:#78350f; } .v-none { background:#e2e8f0; color:#334155; }
+  .verdict .ico { font-size:28px; }
+  .top { display:grid; grid-template-columns:minmax(260px,340px) 1fr; gap:16px; margin-bottom:16px; }
+  .donut { position:relative; height:280px; }
+  .donut .center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none; }
+  .donut .center b { font-size:38px; line-height:1; } .donut .center span { color:var(--muted); font-size:13px; margin-top:4px; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; align-content:start; }
+  .kpi { border-radius:12px; padding:14px 16px; background:var(--bg); border-left:5px solid #94a3b8; }
+  .kpi .l { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; } .kpi .v { font-size:30px; font-weight:700; margin-top:2px; }
+  .k-PASS { border-left-color:#16a34a; } .k-FAIL { border-left-color:#dc2626; } .k-BLOCKED { border-left-color:#f59e0b; } .k-TOTAL { border-left-color:var(--brand); }
+  .stack { display:flex; height:16px; border-radius:10px; overflow:hidden; background:#e2e8f0; margin-top:14px; }
+  .stack i { display:block; height:100%; }
+  .attn .item { border:1px solid var(--line); border-left:5px solid #dc2626; border-radius:10px; padding:12px 14px; margin-bottom:10px; }
+  .attn .item.blocked { border-left-color:#f59e0b; } .attn .item.other { border-left-color:#8b5cf6; }
+  .attn .head { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .attn .id { font-weight:700; } .attn .sec { color:var(--muted); font-size:13px; margin-left:auto; }
+  .attn .ttl { margin:6px 0 8px; font-weight:600; }
+  .attn .lbl { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-top:6px; }
+  .attn .txt { white-space:pre-wrap; font-size:14px; line-height:1.5; }
+  .good { text-align:center; padding:26px 10px; color:#166534; font-size:16px; }
+  .note { color:var(--muted); font-size:14px; margin:10px 0 0; }
+  .note button { background:none; border:0; color:var(--brand); cursor:pointer; font:inherit; text-decoration:underline; padding:0; }
+  .box { position:relative; }
+  :root { --brand:#2f5bea; }
+  @media (max-width:760px) { .top { grid-template-columns:1fr; } }
+  @media print { .filters { display:none; } header { background:#2f5bea !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="tag">Execution Summary</span>
+  <h1 id="title"></h1>
+  <p id="sub"></p>
+  <div id="meta"></div>
+</header>
+<main>
+  <div id="truncWarn" class="warn" hidden></div>
+  <div class="card filters"><div class="bar" id="filterBar"></div></div>
+  <div id="verdict"></div>
+  <div class="top">
+    <div class="card"><h3>Results</h3><div class="donut"><canvas id="donut"></canvas><div class="center"><b id="rate">–</b><span>pass rate</span></div></div></div>
+    <div class="card"><h3>At a glance</h3><div class="kpis" id="kpis"></div><div class="stack" id="stack"></div><p class="note" id="rateNote"></p></div>
+  </div>
+  <div class="card" id="secCard"><h3>Results by section</h3><div class="box" id="secBox"><canvas id="secChart"></canvas></div></div>
+  <div class="card attn"><h3 id="attnTitle">Needs attention</h3><div id="attn"></div></div>
+  <div class="card">
+    <div class="listhead"><h3 id="listTitle">Test cases</h3>
+      <div><button class="listbtn" id="expandAll" type="button">Expand all</button></div></div>
+    <p class="hint">Click a test case to see its steps and expected result, exactly as written in your sheet. The filters above apply here too.</p>
+    <div id="caseList"></div>
+    <button class="tmore" id="more" type="button" hidden></button>
+  </div>
+</main>
+<script>
+const DATA = /*__DATA__*/null;
+/*__COMMON__*/
+/*__TC__*/
+
+setTcHeader();
+const bar = mountFilterBar(document.getElementById('filterBar'), render);
+
+function render() {
+  const list = filteredCases();
+  const counts = countStatus(list);
+  const total = list.length;
+  const rate = passRate(counts);
+
+  // verdict banner
+  let cls = 'v-none', ico = 'ℹ', head = 'No test cases match the current filters', sub = '';
+  if (total > 0) {
+    const executed = total - counts['NOT RUN'] - counts['SKIPPED'];
+    if (counts['FAIL'] > 0) { cls = 'v-bad'; ico = '✕'; head = counts['FAIL'] + ' of ' + total + ' test case' + (total > 1 ? 's' : '') + ' failed'; sub = 'Pass rate of executed tests: ' + pct(rate); }
+    else if (executed === 0) { cls = 'v-none'; ico = 'ℹ'; head = 'No results recorded yet'; sub = 'These ' + total + ' test cases have no status.'; }
+    else if (counts['BLOCKED'] > 0) { cls = 'v-warn'; ico = '!'; head = 'No failures, but ' + counts['BLOCKED'] + ' test case' + (counts['BLOCKED'] > 1 ? 's are' : ' is') + ' blocked'; sub = counts['PASS'] + ' passed.'; }
+    else { cls = 'v-ok'; ico = '✓'; head = 'All ' + counts['PASS'] + ' executed test case' + (counts['PASS'] > 1 ? 's' : '') + ' passed'; sub = counts['NOT RUN'] ? counts['NOT RUN'] + ' more have no result yet.' : ''; }
+  }
+  document.getElementById('verdict').innerHTML = '<div class="verdict ' + cls + '"><span class="ico">' + ico + '</span><div>' + esc(head) + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div></div>';
+
+  // donut
+  const used = STATUS_ORDER.filter(s => counts[s] > 0);
+  draw('donut', {
+    type: 'doughnut',
+    data: { labels: used.map(s => STATUS_LABEL[s]), datasets: [{ data: used.map(s => counts[s]), backgroundColor: used.map(s => STATUS_COLOR[s]), borderWidth: 2, borderColor: '#fff' }] },
+    options: { cutout: '68%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } } } }
+  });
+  document.getElementById('rate').textContent = pct(rate);
+
+  // KPI tiles
+  const tiles = [['TOTAL', 'Total', total], ['PASS', 'Passed', counts['PASS']], ['FAIL', 'Failed', counts['FAIL']]];
+  ['BLOCKED', 'SKIPPED', 'NOT RUN', 'OTHER'].forEach(s => { if (counts[s] > 0) tiles.push([s.replace(' ', ''), STATUS_LABEL[s], counts[s]]); });
+  document.getElementById('kpis').innerHTML = tiles.map(t => '<div class="kpi k-' + t[0] + '"><div class="l">' + t[1] + '</div><div class="v">' + t[2].toLocaleString() + '</div></div>').join('');
+  document.getElementById('stack').innerHTML = total ? STATUS_ORDER.filter(s => counts[s] > 0).map(s =>
+    '<i style="width:' + (counts[s] / total * 100) + '%;background:' + STATUS_COLOR[s] + '" title="' + STATUS_LABEL[s] + ': ' + counts[s] + '"></i>').join('') : '';
+  document.getElementById('rateNote').textContent = 'Pass rate = passed ÷ executed (test cases marked not run or skipped are left out).';
+
+  // results by section
+  const secCard = document.getElementById('secCard');
+  if (SECTIONS.length > 1) {
+    const groups = [];
+    SECTIONS.forEach(s => {
+      const part = list.filter(c => c.section === s);
+      if (part.length) groups.push([s, countStatus(part)]);
+    });
+    secCard.hidden = groups.length === 0;
+    if (groups.length) stackedBar('secChart', 'secBox', groups);
+  } else secCard.hidden = true;
+
+  // failed / blocked list
+  const bad = list.filter(c => c.status === 'FAIL' || c.status === 'BLOCKED' || c.status === 'OTHER');
+  document.getElementById('attnTitle').textContent = 'Needs attention' + (bad.length ? ' (' + bad.length + ')' : '');
+  const pieces = bad.slice(0, 100).map(c => {
+    const r = c.r;
+    const cls = c.status === 'BLOCKED' ? 'blocked' : c.status === 'OTHER' ? 'other' : '';
+    return '<div class="item ' + cls + '"><div class="head">' + (c.id ? '<span class="id">' + esc(c.id) + '</span>' : '') + statusBadge(c.status, r[TC.status]) +
+      (c.section ? '<span class="sec">' + esc(c.section) + '</span>' : '') + '</div>' +
+      (c.title ? '<div class="ttl">' + esc(c.title) + '</div>' : '') +
+      (TC.steps >= 0 && r[TC.steps] ? '<div class="lbl">' + esc(COLS[TC.steps].name) + '</div><div class="txt">' + esc(r[TC.steps]) + '</div>' : '') +
+      (TC.expected >= 0 && r[TC.expected] ? '<div class="lbl">' + esc(COLS[TC.expected].name) + '</div><div class="txt">' + esc(r[TC.expected]) + '</div>' : '') + '</div>';
+  });
+  let html = pieces.join('');
+  if (bad.length > 100) html += '<p class="note">Showing the first 100 of ' + bad.length + '. Use the Test Case Explorer report to see all of them.</p>';
+  if (!bad.length) html = total ? '<div class="good">✓ No failed or blocked test cases' + (FILTER.status || FILTER.section || FILTER.q ? ' in this selection' : '') + '.</div>' : '<div class="good" style="color:#64748b">Nothing to show.</div>';
+  if (counts['NOT RUN'] > 0 && !FILTER.status) {
+    html += '<p class="note">' + counts['NOT RUN'] + ' test case' + (counts['NOT RUN'] > 1 ? 's have' : ' has') + ' no result yet. <button type="button" id="showNotRun">Show them</button></p>';
+  }
+  const el = document.getElementById('attn'); el.innerHTML = html;
+  const b = document.getElementById('showNotRun'); if (b) b.onclick = () => bar.setStatus('NOT RUN');
+
+  // every test case, grouped by section, with its steps and expected result
+  document.getElementById('listTitle').textContent = 'Test cases (' + list.length.toLocaleString() + ')';
+  document.getElementById('caseList').innerHTML = groupedCasesHtml(list, limit, allOpen);
+  const more = document.getElementById('more');
+  more.hidden = list.length <= limit;
+  more.textContent = 'Show more (' + (list.length - limit).toLocaleString() + ' remaining)';
+}
+
+let limit = 150, allOpen = false;
+document.getElementById('more').onclick = () => { limit += 150; render(); };
+document.getElementById('expandAll').onclick = () => {
+  allOpen = !allOpen;
+  document.querySelectorAll('#caseList details').forEach(d => { d.open = allOpen || d.classList.contains('tgroup'); });
+  document.getElementById('expandAll').textContent = allOpen ? 'Collapse all' : 'Expand all';
+};
+render();
+</script>
+</body>
+</html>

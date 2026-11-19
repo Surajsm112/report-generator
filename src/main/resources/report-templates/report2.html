@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ – Data Explorer</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root { --bg:#ffffff; --panel:#f6f7f9; --ink:#222831; --muted:#757f8c; --line:#dfe3e8; --brand:#0f766e; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Segoe UI, system-ui, Arial, sans-serif; color:var(--ink); background:var(--bg); }
+  .top { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 22px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .top h1 { margin:0; font-size:20px; } .top p { margin:2px 0 0; color:var(--muted); font-size:13px; }
+  .badge { background:var(--brand); color:#fff; font-size:11px; padding:3px 10px; border-radius:20px; text-transform:uppercase; letter-spacing:.05em; }
+  .layout { display:grid; grid-template-columns:280px 1fr; min-height:calc(100vh - 70px); }
+  aside { background:var(--panel); border-right:1px solid var(--line); padding:16px; overflow:auto; max-height:calc(100vh - 70px); position:sticky; top:0; }
+  aside h2 { font-size:14px; margin:0 0 10px; display:flex; justify-content:space-between; align-items:center; }
+  .f { margin-bottom:12px; } .f label { display:block; font-size:12px; color:var(--muted); margin-bottom:3px; }
+  .f input, .f select { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px; font:inherit; background:#fff; }
+  .pair { display:flex; gap:6px; } .pair input { min-width:0; }
+  button { background:var(--brand); color:#fff; border:0; border-radius:6px; padding:6px 12px; cursor:pointer; font:inherit; }
+  button:disabled { opacity:.4; cursor:default; } button.ghost { background:#e6f2f1; color:var(--brand); }
+  main { padding:18px 22px 40px; min-width:0; }
+  .warn { background:#fff4e0; border:1px solid #ffd9a0; color:#8a5200; padding:10px 14px; border-radius:8px; margin-bottom:14px; font-size:14px; }
+  .panel { border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:18px; }
+  .panel h3 { margin:0 0 10px; font-size:15px; }
+  .builder { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  .builder label { font-size:12px; color:var(--muted); display:block; margin-bottom:3px; }
+  .builder select { padding:6px 8px; border:1px solid var(--line); border-radius:6px; font:inherit; }
+  .box { position:relative; height:300px; }
+  .tbar { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; }
+  .tsearch { padding:7px 10px; border:1px solid var(--line); border-radius:6px; width:260px; max-width:100%; font:inherit; }
+  .tinfo { color:var(--muted); font-size:13px; }
+  .twrap { overflow:auto; border:1px solid var(--line); border-radius:8px; max-height:520px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th { position:sticky; top:0; background:#eef1f4; text-align:left; padding:8px 10px; cursor:pointer; white-space:nowrap; border-bottom:1px solid var(--line); user-select:none; }
+  td { padding:7px 10px; border-bottom:1px solid #eef0f3; white-space:nowrap; max-width:320px; overflow:hidden; text-overflow:ellipsis; }
+  tr:hover td { background:#f2faf9; } .num { text-align:right; font-variant-numeric:tabular-nums; }
+  .pager { display:flex; justify-content:center; gap:12px; align-items:center; margin-top:10px; }
+  @media (max-width:820px) { .layout { grid-template-columns:1fr; } aside { position:static; max-height:none; border-right:0; border-bottom:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<div class="top">
+  <div><h1 id="title"></h1><p id="sub"></p></div>
+  <span class="badge">Data Explorer</span>
+</div>
+<div class="layout">
+  <aside>
+    <h2>Filters <button class="ghost" id="reset">Reset</button></h2>
+    <div id="filters"></div>
+  </aside>
+  <main>
+    <div id="truncWarn" class="warn" hidden></div>
+    <div class="panel">
+      <h3>Chart builder <span id="chartInfo" style="font-weight:400;color:var(--muted);font-size:13px"></span></h3>
+      <div class="builder">
+        <div><label>Group by (X)</label><select id="bx"></select></div>
+        <div><label>Measure</label><select id="by"></select></div>
+        <div><label>Calculation</label><select id="bagg"><option value="sum">Sum</option><option value="avg">Average</option><option value="count">Count</option></select></div>
+        <div><label>Chart type</label><select id="btype"><option value="bar">Bar</option><option value="line">Line</option><option value="pie">Pie</option></select></div>
+      </div>
+      <div class="box"><canvas id="chart"></canvas></div>
+    </div>
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3 style="margin:0">Data table</h3><button class="ghost" id="csv">Download filtered rows (CSV)</button>
+      </div>
+      <div id="table"></div>
+    </div>
+  </main>
+</div>
+<script>
+const DATA = /*__DATA__*/null;
+/*__COMMON__*/
+
+setHeader();
+// Filters only for columns where a filter makes sense: dates, numbers and short lists of categories.
+// Free text (names, descriptions, steps...) is searched with the search box above the table instead.
+const filterCols = COLS.filter(c => c.type === 'DATE' || c.type === 'NUMBER' || (c.type === 'CATEGORY' && c.distinct >= 2))
+  .slice(0, 8);
+const F = makeFilters($('#filters'), filterCols, refresh);
+$('#reset').onclick = F.reset;
+if (!filterCols.length) {
+  $('#filters').innerHTML = '<p style="color:var(--muted);font-size:13px">No dates, numbers or categories to filter. Use the search box above the table.</p>';
+}
+
+// ----- chart builder -----
+const xCols = [].concat(dateCols, catCols, textCols.filter(c => c.distinct <= 60), numCols.filter(c => c.distinct <= 30));
+$('#bx').innerHTML = xCols.map(c => '<option value="' + c.i + '">' + esc(c.name) + '</option>').join('');
+$('#by').innerHTML = '<option value="">Rows (count)</option>' + numCols.map(c => '<option value="' + c.i + '">' + esc(c.name) + '</option>').join('');
+if (numCols.length) { $('#by').value = String(numCols[0].i); }
+['bx', 'by', 'bagg', 'btype'].forEach(id => $('#' + id).addEventListener('change', refresh));
+
+function drawChart(rows) {
+  if (!xCols.length) { $('#chartInfo').textContent = '– no suitable column to group by'; return; }
+  const x = COLS[+$('#bx').value];
+  const yv = $('#by').value === '' ? null : +$('#by').value;
+  let agg = $('#bagg').value; if (yv === null) agg = 'count';
+  const type = $('#btype').value;
+  let pairs;
+  if (x.type === 'DATE') pairs = trendSeries(rows, x, yv, agg);
+  else {
+    pairs = aggregate(rows, x.i, yv, agg);
+    pairs = x.type === 'NUMBER' ? pairs.sort((a, b) => a[0] - b[0]) : topN(pairs, 15, 'Other');
+  }
+  $('#chartInfo').textContent = '· ' + (yv === null ? 'count of rows' : agg + ' of ' + COLS[yv].name) + ' by ' + x.name;
+  const pie = type === 'pie';
+  draw('chart', {
+    type, data: { labels: pairs.map(p => p[0]), datasets: [{ label: yv === null ? 'Rows' : COLS[yv].name, data: pairs.map(p => p[1]),
+      backgroundColor: pie ? colors(pairs.length) : PALETTE[0], borderColor: PALETTE[0], tension: .3 }] },
+    options: { plugins: { legend: { display: pie, position: 'right' } } }
+  });
+}
+
+// ----- table -----
+const T = makeTable($('#table'), () => F.apply(), 25);
+$('#csv').onclick = () => downloadCsv(T.rows());
+
+function refresh() { const rows = F.apply(); drawChart(rows); T.render(); }
+refresh();
+</script>
+</body>
+</html>
